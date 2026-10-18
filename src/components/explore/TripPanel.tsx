@@ -1,8 +1,10 @@
 import { Route, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { primaryCategory } from '../../data/categories'
 import { formatMinutes, totalVisitMinutes, type SavedPlace } from '../../services/tripStore'
 
 export interface TripPanelProps {
+  cityId: string
   cityName: string
   places: readonly SavedPlace[]
   onRemove: (placeId: string) => void
@@ -11,7 +13,7 @@ export interface TripPanelProps {
 }
 
 /** SelectedPlacesPanel from the design. Route optimizing is the next page to build, so its button is inactive. */
-export function TripPanel({ cityName, places, onRemove, headingId }: TripPanelProps) {
+export function TripPanel({ cityId, cityName, places, onRemove, headingId }: TripPanelProps) {
   const minutes = totalVisitMinutes(places)
   const canOptimize = places.length >= 2
 
@@ -69,6 +71,11 @@ export function TripPanel({ cityName, places, onRemove, headingId }: TripPanelPr
         <Route size={18} aria-hidden="true" />
         Optimize My Route
       </button>
+      {places.length > 0 && (
+        <Link className="tm-btn tm-btn--ghost tm-btn--sm trip-panel__cta" to={`/trip/${cityId}`}>
+          Review in Trip Builder
+        </Link>
+      )}
       <p id={`${headingId}-note`} className="trip-panel__note">
         {canOptimize
           ? 'Route optimizing is coming soon. Your selection is saved on this device.'

@@ -300,6 +300,7 @@ function CityExplorer({ city }: { city: City }) {
 
             <aside className="tm-card explore-trip" aria-labelledby="trip-heading">
               <TripPanel
+                cityId={city.id}
                 cityName={city.name}
                 places={trip}
                 onRemove={(placeId) => removeTripPlace(city.id, placeId)}
@@ -331,7 +332,8 @@ function CityExplorer({ city }: { city: City }) {
         {sheetOpen && (
           <div className="trip-sheet" id="trip-sheet" role="dialog" aria-modal="false" aria-labelledby="trip-sheet-heading">
             <TripPanel
-              cityName={city.name}
+              cityId={city.id}
+                cityName={city.name}
               places={trip}
               onRemove={(placeId) => removeTripPlace(city.id, placeId)}
               headingId="trip-sheet-heading"

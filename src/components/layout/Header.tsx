@@ -1,13 +1,14 @@
 import { useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ChevronDown, Compass, Heart, LogIn, Menu, X } from 'lucide-react'
+import { ChevronDown, Compass, Heart, LogIn, Menu, Route, X } from 'lucide-react'
 import { Link, useInRouterContext } from 'react-router-dom'
 import { AuthContext } from '../../auth/useAuth'
 import { BRAND_NAME } from '../../config/brand'
 import { findCity } from '../../data/destinations'
+import { lastExploredCity } from '../../services/lastCity'
 import { useTripStore } from '../../services/tripStore'
 
-export type NavKey = 'home' | 'explore' | 'travel-mode'
+export type NavKey = 'home' | 'explore' | 'travel-mode' | 'trip'
 
 interface NavAnchorProps {
   to: string
@@ -50,7 +51,9 @@ export function Header({ active }: { active?: NavKey }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const [favOpen, setFavOpen] = useState(false)
   const favRef = useRef<HTMLDivElement>(null)
-  const { favorites } = useTripStore()
+  const { favorites, trips } = useTripStore()
+  const tripCityId = findCity(lastExploredCity())?.id
+  const tripCount = tripCityId ? (trips[tripCityId]?.length ?? 0) : 0
   const [drawerOpen, setDrawerOpen] = useState(false)
   const menuRef = useRef<HTMLDivElement>(null)
 
@@ -173,6 +176,17 @@ export function Header({ active }: { active?: NavKey }) {
             </div>
           )}
 
+          {authenticated && (
+            <NavAnchor
+              to="/trip"
+              className={`tm-btn tm-btn--primary tm-btn--sm tm-nav__trip${active === 'trip' ? ' tm-nav__trip--on' : ''}`}
+              current={active === 'trip'}
+            >
+              <Route size={18} aria-hidden="true" />
+              My Trip · {tripCount}
+            </NavAnchor>
+          )}
+
           {anonymous && (
             <button type="button" className="tm-btn tm-btn--primary tm-btn--sm" onClick={() => void auth.login()}>
               <LogIn size={18} aria-hidden="true" />
@@ -204,6 +218,11 @@ export function Header({ active }: { active?: NavKey }) {
           <NavAnchor to="/travel-mode" className="tm-drawer__link" current={active === 'travel-mode'}>
             Travel Mode
           </NavAnchor>
+          {authenticated && (
+            <NavAnchor to="/trip" className="tm-drawer__link" current={active === 'trip'}>
+              My Trip · {tripCount}
+            </NavAnchor>
+          )}
           {authenticated && (
             <>
               {signedInAs && <p className="tm-drawer__identity">Signed in as {signedInAs}</p>}

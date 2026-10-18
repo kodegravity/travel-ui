@@ -8,6 +8,7 @@ import './styles/travelmate.css'
 import './styles/home.css'
 import './styles/explore-page.css'
 import './styles/place-page.css'
+import './styles/trip-page.css'
 
 const rootElement = document.getElementById('root')
 if (!rootElement) {
