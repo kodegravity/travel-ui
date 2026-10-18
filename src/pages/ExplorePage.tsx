@@ -18,6 +18,7 @@ import {
   useTripStore,
 } from '../services/tripStore'
 import type { RecommendationDto } from '../types/api'
+import type { PlaceLinkState } from './PlaceDetailsPage'
 import type { Interest } from '../types/travel'
 
 type SortKey = 'recommended' | 'shortest' | 'name'
@@ -282,6 +283,8 @@ function CityExplorer({ city }: { city: City }) {
                           isFavorite={favoriteIds.has(place.placeId)}
                           onToggleTrip={() => handleToggleTrip(place)}
                           onToggleFavorite={() => toggleFavorite(toSavedPlace(city.id, place))}
+                          detailsTo={`/places/${city.id}/${encodeURIComponent(place.placeId)}`}
+                          detailsState={{ place, nearby: places } satisfies PlaceLinkState}
                         />
                       </li>
                     ))}

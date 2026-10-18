@@ -76,6 +76,48 @@ export const SEARCH_PAGE_SIZES = [5, 10, 20] as const
 
 export type SearchPageSize = (typeof SEARCH_PAGE_SIZES)[number]
 
+/** GET /api/v1/places/{placeId}. Every field but the id and name can be missing. */
+export interface PlaceDetails {
+  placeId: string
+  name: string
+  address?: string
+  latitude?: number
+  longitude?: number
+  rating?: number
+  userRatingCount?: number
+  openNow?: boolean
+  /** One line per day, formatted by the provider. */
+  weekdayHours?: string[]
+  websiteUri?: string
+  googleMapsUri?: string
+  summary?: string
+  /** Google's level, such as PRICE_LEVEL_MODERATE. */
+  priceLevel?: string
+  accessibility?: {
+    wheelchairAccessibleEntrance?: boolean
+    wheelchairAccessibleRestroom?: boolean
+    wheelchairAccessibleSeating?: boolean
+    wheelchairAccessibleParking?: boolean
+  }
+  photo?: { url: string; widthPx?: number; heightPx?: number; attributions: PlaceAttribution[] }
+  reviews?: PlaceReview[]
+  /** "google" or "sample", for the attribution line. */
+  source?: string
+}
+
+export interface PlaceAttribution {
+  displayName?: string
+  uri?: string
+}
+
+export interface PlaceReview {
+  authorName?: string
+  authorUri?: string
+  rating?: number
+  text?: string
+  relativeTime?: string
+}
+
 /** RFC 9457 problem detail returned by the backend for errors. */
 export interface ApiProblem {
   type?: string

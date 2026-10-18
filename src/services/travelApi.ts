@@ -7,6 +7,7 @@ import {
   type CreateTravelSessionResponse,
   type LocationRequest,
   type PagedRecommendationResponse,
+  type PlaceDetails,
   type RecommendationDto,
   type RecommendationSearchRequest,
   type TravelSessionRecommendationResponse,
@@ -15,6 +16,7 @@ import type { TravelerPreferences } from '../types/travel'
 
 const SESSIONS_PATH = '/api/v1/travel-sessions'
 const RECOMMENDATIONS_PATH = '/api/v1/recommendations'
+const PLACES_PATH = '/api/v1/places'
 
 export interface TravelApiRequestOptions {
   signal?: AbortSignal
@@ -106,6 +108,30 @@ function isPagedRecommendationResponse(value: unknown): value is PagedRecommenda
   )
 }
 
+function isOptional(value: unknown, type: 'string' | 'number' | 'boolean'): boolean {
+  return value == null || (typeof value === type && (type !== 'number' || Number.isFinite(value)))
+}
+
+function isPlaceDetails(value: unknown): value is PlaceDetails {
+  return (
+    isRecord(value) &&
+    typeof value.placeId === 'string' &&
+    typeof value.name === 'string' &&
+    value.name.trim().length > 0 &&
+    isOptional(value.address, 'string') &&
+    isOptional(value.latitude, 'number') &&
+    isOptional(value.longitude, 'number') &&
+    isOptional(value.rating, 'number') &&
+    isOptional(value.userRatingCount, 'number') &&
+    isOptional(value.openNow, 'boolean') &&
+    isOptional(value.summary, 'string') &&
+    isOptional(value.websiteUri, 'string') &&
+    (value.weekdayHours == null || (Array.isArray(value.weekdayHours) && value.weekdayHours.every((d) => typeof d === 'string'))) &&
+    (value.reviews == null || (Array.isArray(value.reviews) && value.reviews.every(isRecord))) &&
+    (value.photo == null || (isRecord(value.photo) && typeof value.photo.url === 'string'))
+  )
+}
+
 async function readProblem(response: Response): Promise<TravelApiError> {
   const fallbackTitle = `Request failed with status ${response.status}`
   let body: unknown = null
@@ -136,7 +162,7 @@ async function readProblem(response: Response): Promise<TravelApiError> {
 }
 
 async function send(
-  method: 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'DELETE',
   path: string,
   body: unknown,
   signal?: AbortSignal,
@@ -267,6 +293,17 @@ export async function searchRecommendations(
   )
   const body = await readJson(response)
   if (!isPagedRecommendationResponse(body) || body.page !== page) throw invalidResponse(response.status)
+  return body
+}
+
+/**
+ * GET /api/v1/places/{placeId}: address, rating, hours, one photo, and reviews when known.
+ * Each call can cost a Google Place Details and a photo lookup, so callers should not repeat it needlessly.
+ */
+export async function getPlaceDetails(placeId: string, options: TravelApiRequestOptions = {}): Promise<PlaceDetails> {
+  const response = await send('GET', `${PLACES_PATH}/${encodeURIComponent(placeId)}`, undefined, options.signal)
+  const body = await readJson(response)
+  if (!isPlaceDetails(body) || body.placeId !== placeId) throw invalidResponse(response.status)
   return body
 }
 

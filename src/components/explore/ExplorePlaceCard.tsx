@@ -1,4 +1,5 @@
 import { Check, Clock, ExternalLink, Heart, Plus, Tag } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { primaryCategory } from '../../data/categories'
 import { formatCategory, formatCost, isSafeMapsUrl } from '../../services/recommendationFormat'
 import { formatMinutes } from '../../services/tripStore'
@@ -10,19 +11,37 @@ export interface ExplorePlaceCardProps {
   isFavorite: boolean
   onToggleTrip: () => void
   onToggleFavorite: () => void
+  /** Place details page, with what Explore already loaded so it can render at once. */
+  detailsTo: string
+  detailsState: unknown
 }
 
 /** PlaceCard from the design: tile, save heart, name, category, visit time, price, and Add to Trip. */
-export function ExplorePlaceCard({ place, inTrip, isFavorite, onToggleTrip, onToggleFavorite }: ExplorePlaceCardProps) {
+export function ExplorePlaceCard({
+  place,
+  inTrip,
+  isFavorite,
+  onToggleTrip,
+  onToggleFavorite,
+  detailsTo,
+  detailsState,
+}: ExplorePlaceCardProps) {
   const category = primaryCategory(place.category)
   const Icon = category.icon
 
   return (
     <article className="tm-card place-card">
       <div className="place-card__media">
-        <span className="place-card__photo tone-tile" style={{ backgroundColor: category.tone }} aria-hidden="true">
+        <Link
+          to={detailsTo}
+          state={detailsState}
+          className="place-card__photo tone-tile"
+          style={{ backgroundColor: category.tone }}
+          tabIndex={-1}
+          aria-hidden="true"
+        >
           <Icon size={44} strokeWidth={1.5} />
-        </span>
+        </Link>
         <button
           type="button"
           className="place-card__fav"
@@ -35,7 +54,11 @@ export function ExplorePlaceCard({ place, inTrip, isFavorite, onToggleTrip, onTo
       </div>
 
       <div className="place-card__body">
-        <h3 className="place-card__name">{place.name}</h3>
+        <h3 className="place-card__name">
+          <Link to={detailsTo} state={detailsState} className="place-card__link">
+            {place.name}
+          </Link>
+        </h3>
         <p className="place-card__category">{formatCategory(place.category)}</p>
         <ul className="place-card__facts">
           <li>

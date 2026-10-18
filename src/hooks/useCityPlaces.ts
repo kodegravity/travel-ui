@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { City } from '../data/destinations'
 import { findCountry } from '../data/destinations'
+import { cachedRequest, forgetRequest } from '../services/requestCache'
 import { describeTravelApiError, isAbortError, searchRecommendations } from '../services/travelApi'
 import type { RecommendationDto } from '../types/api'
 import { CURRENCIES, INTERESTS, MAX_CUSTOM_TIME_MINUTES, type Currency, type TravelerPreferences } from '../types/travel'
@@ -34,6 +35,10 @@ function browsePreferences(city: City): TravelerPreferences {
   }
 }
 
+function cacheKey(city: City): string {
+  return `city-places:${city.id}`
+}
+
 /** Loads the places around a city centre. One backend call (one Google call) per city visit or retry. */
 export function useCityPlaces(city: City | undefined): CityPlacesResult {
   const [attempt, setAttempt] = useState(0)
@@ -47,21 +52,27 @@ export function useCityPlaces(city: City | undefined): CityPlacesResult {
 
   useEffect(() => {
     if (!city) return
-    const controller = new AbortController()
-    searchRecommendations(browsePreferences(city), city.location, 0, PAGE_SIZE, { signal: controller.signal })
+    let active = true
+    // Shared per city for a few minutes, so a remount or quick revisit does not repeat the Google call.
+    cachedRequest(cacheKey(city), () =>
+      searchRecommendations(browsePreferences(city), city.location, 0, PAGE_SIZE),
+    )
       .then((response) => {
-        if (!controller.signal.aborted) {
-          setResult({ key: requestKey, status: 'ready', places: response.recommendations, errorMessage: null })
-        }
+        if (active) setResult({ key: requestKey, status: 'ready', places: response.recommendations, errorMessage: null })
       })
       .catch((error: unknown) => {
-        if (isAbortError(error) || controller.signal.aborted) return
+        if (!active || isAbortError(error)) return
         setResult({ key: requestKey, status: 'error', places: [], errorMessage: describeTravelApiError(error) })
       })
-    return () => controller.abort()
+    return () => {
+      active = false
+    }
   }, [city, requestKey])
 
-  const retry = useCallback(() => setAttempt((n) => n + 1), [])
+  const retry = useCallback(() => {
+    if (city) forgetRequest(cacheKey(city))
+    setAttempt((n) => n + 1)
+  }, [city])
 
   // A result for an older city or attempt still shows as loading for the current one.
   if (result.key !== requestKey) {
