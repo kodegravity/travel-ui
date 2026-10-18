@@ -196,7 +196,7 @@ describe('TravelExplorerPage', () => {
   it('renders the empty recommendation state before exploring starts', () => {
     renderPage()
 
-    expect(screen.getByRole('heading', { name: 'Recommendations' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Travel Mode results' })).toBeInTheDocument()
     expect(screen.getByText('Your next adventure starts here.')).toBeInTheDocument()
     expect(
       screen.getByText('Choose your interests and start exploring to discover nearby experiences.'),

@@ -52,6 +52,30 @@ export interface TravelSessionRecommendationResponse {
   generatedAt: string
 }
 
+/** POST /api/v1/recommendations body: a one-off search at a location. */
+export interface RecommendationSearchRequest {
+  location: LocationRequest
+  interests: Interest[]
+  maxBudget: number
+  currencyCode: string
+  availableMinutes: number
+}
+
+/** One page of POST /api/v1/recommendations results, best first. */
+export interface PagedRecommendationResponse {
+  recommendations: RecommendationDto[]
+  /** Zero-based. */
+  page: number
+  size: number
+  totalElements: number
+  totalPages: number
+}
+
+/** Page sizes the backend accepts are 1-50; the UI offers these. */
+export const SEARCH_PAGE_SIZES = [5, 10, 20] as const
+
+export type SearchPageSize = (typeof SEARCH_PAGE_SIZES)[number]
+
 /** RFC 9457 problem detail returned by the backend for errors. */
 export interface ApiProblem {
   type?: string

@@ -1,10 +1,14 @@
 import { useState } from 'react'
 import { AppLayout } from '../components/layout/AppLayout'
+import { NearbySearchCard } from '../components/traveler/NearbySearchCard'
 import { RecommendationResults } from '../components/traveler/RecommendationResults'
+import { SearchResults } from '../components/traveler/SearchResults'
 import { TravelModeCard } from '../components/traveler/TravelModeCard'
 import { TravelPreferencesForm } from '../components/traveler/TravelPreferencesForm'
+import { useNearbySearch, type SearchTarget } from '../hooks/useNearbySearch'
 import { useTravelPreferences } from '../hooks/useTravelPreferences'
 import { useTravelSession } from '../hooks/useTravelSession'
+import type { SearchPageSize } from '../types/api'
 import {
   getNotificationStatus,
   requestNotificationPermission,
@@ -14,11 +18,19 @@ import {
 export function TravelExplorerPage() {
   const preferences = useTravelPreferences()
   const session = useTravelSession()
+  const nearbySearch = useNearbySearch()
   const { state } = session
   const [notificationStatus, setNotificationStatus] = useState<NotificationStatus>(getNotificationStatus)
 
   async function handleEnableNotifications() {
     setNotificationStatus(await requestNotificationPermission())
+  }
+
+  function handleSearch(target: SearchTarget, size: SearchPageSize) {
+    const validPreferences = preferences.validate()
+    if (validPreferences) {
+      void nearbySearch.search(validPreferences, target, size)
+    }
   }
 
   function handleStart() {
@@ -49,7 +61,8 @@ export function TravelExplorerPage() {
           <TravelPreferencesForm preferences={preferences} />
         </div>
 
-        <div className="explorer__travel-mode">
+        <div className="explorer__side">
+          <NearbySearchCard isBusy={nearbySearch.isBusy} onSearch={handleSearch} />
           <TravelModeCard
             phase={state.phase}
             hasSession={state.sessionId !== null}
@@ -64,9 +77,17 @@ export function TravelExplorerPage() {
           />
         </div>
 
+        <div className="explorer__results">
+          <SearchResults
+            state={nearbySearch.state}
+            isBusy={nearbySearch.isBusy}
+            onPageChange={(page) => void nearbySearch.goToPage(page)}
+          />
+        </div>
+
         <section className="explorer__results" aria-labelledby="results-title">
           <h2 id="results-title" className="section-title">
-            Recommendations
+            Travel Mode results
           </h2>
           <RecommendationResults
             state={state}

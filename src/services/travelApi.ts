@@ -6,12 +6,15 @@ import {
   type CreateTravelSessionRequest,
   type CreateTravelSessionResponse,
   type LocationRequest,
+  type PagedRecommendationResponse,
   type RecommendationDto,
+  type RecommendationSearchRequest,
   type TravelSessionRecommendationResponse,
 } from '../types/api'
 import type { TravelerPreferences } from '../types/travel'
 
 const SESSIONS_PATH = '/api/v1/travel-sessions'
+const RECOMMENDATIONS_PATH = '/api/v1/recommendations'
 
 export interface TravelApiRequestOptions {
   signal?: AbortSignal
@@ -83,6 +86,23 @@ function isRecommendationResponse(value: unknown): value is TravelSessionRecomme
     REFRESH_STATUSES.includes(value.refreshStatus as TravelSessionRecommendationResponse['refreshStatus']) &&
     Array.isArray(value.recommendations) &&
     value.recommendations.every(isRecommendationDto)
+  )
+}
+
+function isNonNegativeInteger(value: unknown): value is number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0
+}
+
+function isPagedRecommendationResponse(value: unknown): value is PagedRecommendationResponse {
+  return (
+    isRecord(value) &&
+    Array.isArray(value.recommendations) &&
+    value.recommendations.every(isRecommendationDto) &&
+    isNonNegativeInteger(value.page) &&
+    isNonNegativeInteger(value.size) && value.size > 0 &&
+    isNonNegativeInteger(value.totalElements) &&
+    isNonNegativeInteger(value.totalPages) &&
+    value.recommendations.length <= value.size
   )
 }
 
@@ -217,6 +237,39 @@ export async function stopTravelSession(
   await send('DELETE', `${SESSIONS_PATH}/${encodeURIComponent(sessionId)}`, undefined, options.signal)
 }
 
+export function toRecommendationSearchRequest(
+  preferences: TravelerPreferences,
+  location: LocationRequest,
+): RecommendationSearchRequest {
+  return {
+    location: { latitude: location.latitude, longitude: location.longitude },
+    ...toCreateTravelSessionRequest(preferences),
+  }
+}
+
+/**
+ * POST /api/v1/recommendations?page=&size=. A one-off search that is not tied to a travel session.
+ * Every call runs the search again on the backend (one attraction-provider call per page).
+ */
+export async function searchRecommendations(
+  preferences: TravelerPreferences,
+  location: LocationRequest,
+  page: number,
+  size: number,
+  options: TravelApiRequestOptions = {},
+): Promise<PagedRecommendationResponse> {
+  const query = new URLSearchParams({ page: String(page), size: String(size) })
+  const response = await send(
+    'POST',
+    `${RECOMMENDATIONS_PATH}?${query.toString()}`,
+    toRecommendationSearchRequest(preferences, location),
+    options.signal,
+  )
+  const body = await readJson(response)
+  if (!isPagedRecommendationResponse(body) || body.page !== page) throw invalidResponse(response.status)
+  return body
+}
+
 /** Converts an API error into a message that is safe to show to the traveler. */
 export function describeTravelApiError(error: unknown): string {
   if (!(error instanceof TravelApiError)) {
@@ -240,6 +293,8 @@ export function describeTravelApiError(error: unknown): string {
         : 'A check for new places is already running. Please try again in a moment.'
     case 410:
       return 'This travel session has expired.'
+    case 429:
+      return 'Too many requests in a short time. Please wait a moment and try again.'
     case 503:
       return error.title === 'Travel session capacity reached'
         ? 'Too many travel sessions are active right now. Please try again later.'
