@@ -9,6 +9,7 @@ import './styles/home.css'
 import './styles/explore-page.css'
 import './styles/place-page.css'
 import './styles/trip-page.css'
+import './styles/route-page.css'
 
 const rootElement = document.getElementById('root')
 if (!rootElement) {

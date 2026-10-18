@@ -143,7 +143,7 @@ describe('ExplorePage', () => {
     expect(within(panel).getByText('2 places')).toBeInTheDocument()
     expect(within(panel).getByText('3h 30m')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Remove Royal Palace from trip' })).toHaveAttribute('aria-pressed', 'true')
-    expect(within(panel).getByRole('button', { name: 'Optimize My Route' })).toBeDisabled()
+    expect(within(panel).getByRole('link', { name: 'Optimize My Route' })).toHaveAttribute('href', '/trip/madrid/route')
 
     const saved = JSON.parse(window.localStorage.getItem('roam.trip.v1')!)
     expect(saved.trips.madrid.map((p: { placeId: string }) => p.placeId)).toEqual(['palace', 'prado'])

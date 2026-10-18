@@ -20,6 +20,9 @@ import { findCity, findCountry, type City } from '../data/destinations'
 import { cachedRequest, forgetRequest } from '../services/requestCache'
 import { formatCost, isSafeMapsUrl } from '../services/recommendationFormat'
 import { describeTravelApiError, getPlaceDetails, TravelApiError } from '../services/travelApi'
+import { rememberPlacePhoto } from '../services/placePhotos'
+import { usePlacePhoto } from '../hooks/usePlacePhoto'
+import { PhotoCredit } from '../components/common/PhotoCredit'
 import {
   formatMinutes,
   toggleFavorite,
@@ -132,7 +135,10 @@ function PlaceView({ city, placeId }: { city: City; placeId: string }) {
   useEffect(() => {
     let active = true
     cachedRequest(`place-details:${placeId}`, () => getPlaceDetails(placeId))
-      .then((details) => active && setLoaded({ attempt, state: { status: 'ready', details } }))
+      .then((details) => {
+        if (details.photo) rememberPlacePhoto(placeId, details.photo)
+        if (active) setLoaded({ attempt, state: { status: 'ready', details } })
+      })
       .catch((error: unknown) => {
         if (!active) return
         const missing = error instanceof TravelApiError && error.status === 404
@@ -432,23 +438,12 @@ function PlaceView({ city, placeId }: { city: City; placeId: string }) {
                   <ul className="nearby-list">
                     {nearby.map(({ place, km }) => (
                       <li key={place.placeId}>
-                        <Link
-                          className="tm-card nearby-card"
+                        <NearbyCard
+                          place={place}
                           to={`/places/${city.id}/${encodeURIComponent(place.placeId)}`}
                           state={{ place, nearby: linkState.nearby } satisfies PlaceLinkState}
-                        >
-                          <span
-                            className="nearby-card__thumb tone-tile"
-                            style={{ backgroundColor: primaryCategory(place.category).tone }}
-                            aria-hidden="true"
-                          />
-                          <span className="nearby-card__text">
-                            <strong>{place.name}</strong>
-                            <span className="nearby-card__walk">
-                              {Math.max(1, Math.round((km / WALKING_KMH) * 60))} min walk
-                            </span>
-                          </span>
-                        </Link>
+                          walkMinutes={Math.max(1, Math.round((km / WALKING_KMH) * 60))}
+                        />
                       </li>
                     ))}
                   </ul>
@@ -583,5 +578,21 @@ function PlaceView({ city, placeId }: { city: City; placeId: string }) {
         )}
       </div>
     </AppLayout>
+  )
+}
+
+function NearbyCard({ place, to, state, walkMinutes }: { place: RecommendationDto; to: string; state: PlaceLinkState; walkMinutes: number }) {
+  const { ref, photo } = usePlacePhoto<HTMLAnchorElement>(place.placeId)
+  return (
+    <Link ref={ref} className="tm-card nearby-card" to={to} state={state}>
+      <span className="nearby-card__thumb tone-tile" style={{ backgroundColor: primaryCategory(place.category).tone }} aria-hidden="true">
+        {photo && <img className="card-photo" src={photo.url} alt="" loading="lazy" />}
+      </span>
+      <span className="nearby-card__text">
+        <strong>{place.name}</strong>
+        <span className="nearby-card__walk">{walkMinutes} min walk</span>
+        {photo && <PhotoCredit photo={photo} plain className="nearby-card__credit" />}
+      </span>
+    </Link>
   )
 }

@@ -7,9 +7,12 @@ import {
   type CreateTravelSessionResponse,
   type LocationRequest,
   type PagedRecommendationResponse,
+  type OptimizedRoute,
   type PlaceDetails,
+  type PlacePhoto,
   type RecommendationDto,
   type RecommendationSearchRequest,
+  type RouteOptimizeRequest,
   type TravelSessionRecommendationResponse,
 } from '../types/api'
 import type { TravelerPreferences } from '../types/travel'
@@ -17,6 +20,7 @@ import type { TravelerPreferences } from '../types/travel'
 const SESSIONS_PATH = '/api/v1/travel-sessions'
 const RECOMMENDATIONS_PATH = '/api/v1/recommendations'
 const PLACES_PATH = '/api/v1/places'
+const ROUTES_PATH = '/api/v1/routes/optimize'
 
 export interface TravelApiRequestOptions {
   signal?: AbortSignal
@@ -304,6 +308,54 @@ export async function getPlaceDetails(placeId: string, options: TravelApiRequest
   const response = await send('GET', `${PLACES_PATH}/${encodeURIComponent(placeId)}`, undefined, options.signal)
   const body = await readJson(response)
   if (!isPlaceDetails(body) || body.placeId !== placeId) throw invalidResponse(response.status)
+  return body
+}
+
+function isPlacePhoto(value: unknown): value is PlacePhoto {
+  if (typeof value !== 'object' || value === null) return false
+  const photo = value as Partial<PlacePhoto>
+  return typeof photo.url === 'string' && photo.url.startsWith('https://') && Array.isArray(photo.attributions ?? [])
+}
+
+function isOptimizedRoute(value: unknown, stops: number): value is OptimizedRoute {
+  if (typeof value !== 'object' || value === null) return false
+  const route = value as Partial<OptimizedRoute>
+  return (
+    Array.isArray(route.order) &&
+    route.order.length === stops &&
+    route.order.every((id) => typeof id === 'string') &&
+    Array.isArray(route.legs) &&
+    route.legs.length === stops &&
+    route.legs.every((leg) => typeof leg?.distanceMeters === 'number' && typeof leg.durationSeconds === 'number') &&
+    typeof route.source === 'string'
+  )
+}
+
+/**
+ * GET /api/v1/places/{placeId}/photo: one small photo for a place card, or 404 when the place has none.
+ * Each call can cost a Google photo lookup (capped per day on the backend), so cache the result per session.
+ */
+export async function getPlacePhoto(placeId: string, options: TravelApiRequestOptions = {}): Promise<PlacePhoto> {
+  const response = await send('GET', `${PLACES_PATH}/${encodeURIComponent(placeId)}/photo`, undefined, options.signal)
+  const body = await readJson(response)
+  if (!isPlacePhoto(body)) throw invalidResponse(response.status)
+  return { ...body, attributions: body.attributions ?? [] }
+}
+
+/**
+ * POST /api/v1/routes/optimize: the stops in a short visiting order with street travel times.
+ * Each call can cost one Google Routes call (capped per day on the backend).
+ */
+export async function optimizeRoute(
+  request: RouteOptimizeRequest,
+  options: TravelApiRequestOptions = {},
+): Promise<OptimizedRoute> {
+  const response = await send('POST', ROUTES_PATH, request, options.signal)
+  const body = await readJson(response)
+  const ids = new Set(request.stops.map((stop) => stop.id))
+  if (!isOptimizedRoute(body, request.stops.length) || !body.order.every((id) => ids.has(id))) {
+    throw invalidResponse(response.status)
+  }
   return body
 }
 

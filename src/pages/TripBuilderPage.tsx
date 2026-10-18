@@ -14,11 +14,13 @@ import {
 } from 'lucide-react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { AppLayout } from '../components/layout/AppLayout'
+import { TripSteps } from '../components/trip/TripSteps'
 import { primaryCategory } from '../data/categories'
 import { findCity, type City } from '../data/destinations'
 import { describeLocationError, getCurrentLocation, LocationError } from '../services/geolocation'
 import { lastExploredCity } from '../services/lastCity'
 import { formatCategory } from '../services/recommendationFormat'
+import { deviceLocation as sharedDeviceLocation, rememberDeviceLocation } from '../services/deviceLocation'
 import { estimateTravel } from '../services/travelEstimate'
 import {
   formatMinutes,
@@ -42,8 +44,6 @@ const MODES: { id: TravelMode; label: string }[] = [
   { id: 'drive', label: 'Driving' },
 ]
 
-const STEPS = ['Choose places', 'Organize', 'Optimize route', 'Itinerary'] as const
-const CURRENT_STEP = 1
 
 /** /trip without a city opens the trip for the last explored city. */
 export function TripRedirect() {
@@ -85,7 +85,7 @@ function TripBuilder({ city }: { city: City }) {
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [overIndex, setOverIndex] = useState<number | null>(null)
   // The device location stays in memory only, never in storage.
-  const [deviceLocation, setDeviceLocation] = useState<LocationRequest | null>(null)
+  const [deviceLocation, setDeviceLocation] = useState<LocationRequest | null>(sharedDeviceLocation)
   const [locating, setLocating] = useState(false)
   const [locationError, setLocationError] = useState<string | null>(null)
   const toastTimer = useRef<number | null>(null)
@@ -121,7 +121,9 @@ function TripBuilder({ city }: { city: City }) {
     setLocating(true)
     setLocationError(null)
     try {
-      setDeviceLocation(await getCurrentLocation())
+      const location = await getCurrentLocation()
+      rememberDeviceLocation(location)
+      setDeviceLocation(location)
       updateTripSettings(city.id, { start: 'current' })
     } catch (error) {
       setLocationError(error instanceof LocationError ? describeLocationError(error.code) : "We couldn't get your location.")
@@ -147,31 +149,24 @@ function TripBuilder({ city }: { city: City }) {
     setOverIndex(null)
   }
 
-  const optimizeButton = (className = '') => (
-    <button type="button" className={`tm-btn tm-btn--accent ${className}`} disabled aria-describedby="optimize-note">
-      <Route size={18} aria-hidden="true" />
-      Optimize My Route
-    </button>
-  )
+  const optimizeButton = (className = '') =>
+    canOptimize ? (
+      <Link className={`tm-btn tm-btn--accent ${className}`} to={`/trip/${city.id}/route`}>
+        <Route size={18} aria-hidden="true" />
+        Optimize My Route
+      </Link>
+    ) : (
+      <button type="button" className={`tm-btn tm-btn--accent ${className}`} disabled aria-describedby="optimize-note">
+        <Route size={18} aria-hidden="true" />
+        Optimize My Route
+      </button>
+    )
 
   return (
     <AppLayout active="trip">
       <div className="trip">
         <div className="explore-container trip__main">
-          <ol className="trip-steps" aria-label="Trip steps">
-            {STEPS.map((step, i) => (
-              <li
-                key={step}
-                className={`trip-steps__step${i < CURRENT_STEP ? ' trip-steps__step--done' : ''}${i === CURRENT_STEP ? ' trip-steps__step--current' : ''}`}
-                aria-current={i === CURRENT_STEP ? 'step' : undefined}
-              >
-                <span className="trip-steps__dot" aria-hidden="true">
-                  {i < CURRENT_STEP ? <Check size={14} strokeWidth={3} /> : i + 1}
-                </span>
-                {step}
-              </li>
-            ))}
-          </ol>
+          <TripSteps current={1} />
 
           <header className="trip-head">
             <div className="trip-head__text">
@@ -308,8 +303,8 @@ function TripBuilder({ city }: { city: City }) {
                   <dd className="trip-stat--coral">≈ {formatMinutes(travel.minutes)}</dd>
                   <p className="trip-stat__note">
                     Rough estimate for {travel.km.toFixed(1)} km in the current order
-                    {startsAtDevice ? ', from your location' : `, from ${city.name} centre`}. Real routes come with the
-                    optimizer.
+                    {startsAtDevice ? ', from your location' : `, from ${city.name} centre`}. The optimizer uses real
+                    street routes.
                   </p>
                 </div>
               </dl>
@@ -376,7 +371,7 @@ function TripBuilder({ city }: { city: City }) {
 
               {optimizeButton('trip-summary__cta')}
               <p id="optimize-note" className="trip-summary__note">
-                {canOptimize ? 'Route optimizing is the next step we are building.' : 'Add at least 2 places to optimize.'}
+                {canOptimize ? 'Finds the shortest order with real street routes.' : 'Add at least 2 places to optimize.'}
               </p>
             </aside>
           </div>

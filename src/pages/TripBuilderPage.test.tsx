@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { act, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { TripBuilderPage } from './TripBuilderPage'
@@ -148,13 +148,18 @@ describe('TripBuilderPage', () => {
     expect(screen.getByRole('radio', { name: /City Center/ })).toBeChecked()
   })
 
-  it('needs two places before optimizing, and the optimizer is not live yet', () => {
+  it('needs two places before optimizing, then links to the optimizer', () => {
     seed(PALACE)
     renderTrip()
 
     const summary = screen.getByRole('complementary', { name: 'Trip summary' })
     expect(within(summary).getByRole('button', { name: 'Optimize My Route' })).toBeDisabled()
     expect(within(summary).getByText('Add at least 2 places to optimize.')).toBeInTheDocument()
+
+    act(() => {
+      toggleTripPlace(PRADO)
+    })
+    expect(within(summary).getByRole('link', { name: 'Optimize My Route' })).toHaveAttribute('href', '/trip/madrid/route')
   })
 
   it('counts unknown visit times honestly', () => {

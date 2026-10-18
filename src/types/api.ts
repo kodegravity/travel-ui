@@ -99,7 +99,7 @@ export interface PlaceDetails {
     wheelchairAccessibleSeating?: boolean
     wheelchairAccessibleParking?: boolean
   }
-  photo?: { url: string; widthPx?: number; heightPx?: number; attributions: PlaceAttribution[] }
+  photo?: PlacePhoto
   reviews?: PlaceReview[]
   /** "google" or "sample", for the attribution line. */
   source?: string
@@ -126,4 +126,29 @@ export interface ApiProblem {
   detail?: string
   instance?: string
   errors?: Record<string, string>
+}
+
+/** A Google place photo: a short-lived image URL plus the author credits Google requires us to show. */
+export interface PlacePhoto {
+  url: string
+  widthPx?: number
+  heightPx?: number
+  attributions: PlaceAttribution[]
+}
+
+/** POST /api/v1/routes/optimize. Google optimizes walking and driving only. */
+export interface RouteOptimizeRequest {
+  mode: 'WALK' | 'DRIVE'
+  origin: LocationRequest
+  stops: { id: string; latitude: number; longitude: number }[]
+}
+
+/** legs[0] runs from the origin to order[0], legs[i] from order[i-1] to order[i]. */
+export interface OptimizedRoute {
+  order: string[]
+  legs: { distanceMeters: number; durationSeconds: number; polyline?: string }[]
+  distanceMeters: number
+  durationSeconds: number
+  /** "google" for street routes, "estimate" for distance-based estimates. */
+  source: string
 }

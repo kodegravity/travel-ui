@@ -327,7 +327,7 @@
 /* Map */
 .explorer-map {
   position: relative;
-  /* Keeps Leaflet's high z-indexes below the sticky header. */
+  /* Keeps the map's own z-indexes below the sticky header. */
   isolation: isolate;
   z-index: 0;
   min-width: 0;
@@ -347,9 +347,10 @@
   font-weight: 600;
 }
 
-.map-pin-anchor {
-  background: none;
-  border: 0;
+.places-map__note {
+  max-width: 32ch;
+  padding: 0 16px;
+  text-align: center;
 }
 
 .map-pin {
@@ -379,6 +380,8 @@
 
 .map-center {
   display: block;
+  /* Advanced markers anchor at the bottom centre; the dot should sit on the point. */
+  transform: translateY(50%);
   width: 20px;
   height: 20px;
   border-radius: 50%;

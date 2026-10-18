@@ -21,6 +21,11 @@ export function distanceKm(a: Point, b: Point): number {
   return 2 * 6371 * Math.asin(Math.sqrt(h))
 }
 
+/** Street distance implied by a straight-line distance. */
+export function roadKm(km: number, mode: TravelMode): number {
+  return km * MODEL[mode].detour
+}
+
 export function legMinutes(km: number, mode: TravelMode): number {
   const m = MODEL[mode]
   return km === 0 ? 0 : Math.round(((km * m.detour) / m.kmh) * 60 + m.overheadMin)

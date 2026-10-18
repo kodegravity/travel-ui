@@ -825,3 +825,46 @@
     transform: none;
   }
 }
+
+/* Google card photos sit over the coloured tile, which stays as the fallback while loading or when there is none. */
+.place-card__photo,
+.nearby-card__thumb {
+  position: relative;
+  overflow: hidden;
+}
+
+.card-photo {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-credit {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.photo-credit a {
+  color: inherit;
+}
+
+.place-card__credit {
+  position: absolute;
+  left: 8px;
+  bottom: 8px;
+  max-width: calc(100% - 16px);
+  overflow: hidden;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.62);
+  color: #fff;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nearby-card__credit {
+  color: var(--tm-muted);
+}

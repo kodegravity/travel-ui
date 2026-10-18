@@ -1,6 +1,8 @@
 import { Check, Clock, ExternalLink, Heart, Plus, Tag } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { primaryCategory } from '../../data/categories'
+import { usePlacePhoto } from '../../hooks/usePlacePhoto'
+import { PhotoCredit } from '../common/PhotoCredit'
 import { formatCategory, formatCost, isSafeMapsUrl } from '../../services/recommendationFormat'
 import { formatMinutes } from '../../services/tripStore'
 import type { RecommendationDto } from '../../types/api'
@@ -28,10 +30,11 @@ export function ExplorePlaceCard({
 }: ExplorePlaceCardProps) {
   const category = primaryCategory(place.category)
   const Icon = category.icon
+  const { ref, photo } = usePlacePhoto<HTMLDivElement>(place.placeId)
 
   return (
     <article className="tm-card place-card">
-      <div className="place-card__media">
+      <div className="place-card__media" ref={ref}>
         <Link
           to={detailsTo}
           state={detailsState}
@@ -41,7 +44,9 @@ export function ExplorePlaceCard({
           aria-hidden="true"
         >
           <Icon size={44} strokeWidth={1.5} />
+          {photo && <img className="card-photo" src={photo.url} alt="" loading="lazy" />}
         </Link>
+        {photo && <PhotoCredit photo={photo} className="place-card__credit" />}
         <button
           type="button"
           className="place-card__fav"

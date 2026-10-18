@@ -7,6 +7,7 @@ import { ExplorePage } from './pages/ExplorePage'
 import { ExploreRedirect } from './pages/ExploreRedirect'
 import { HomePage } from './pages/HomePage'
 import { PlaceDetailsPage } from './pages/PlaceDetailsPage'
+import { RouteOptimizerPage } from './pages/RouteOptimizerPage'
 import { TripBuilderPage, TripRedirect } from './pages/TripBuilderPage'
 import { TravelExplorerPage } from './pages/TravelExplorerPage'
 
@@ -36,6 +37,14 @@ export default function App() {
             }
           />
           <Route path="/trip" element={<TripRedirect />} />
+          <Route
+            path="/trip/:cityId/route"
+            element={
+              <ProtectedRoute>
+                <RouteOptimizerPage />
+              </ProtectedRoute>
+            }
+          />
           <Route
             path="/trip/:cityId"
             element={
