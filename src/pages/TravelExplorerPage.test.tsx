@@ -17,16 +17,14 @@ afterEach(() => {
 })
 
 describe('TravelExplorerPage', () => {
-  it('renders the brand, hero heading, and description', () => {
+  it('renders the brand, the heading, and the map region', () => {
     renderPage()
 
     expect(screen.getByText('ROAM / AI')).toBeInTheDocument()
     expect(
       screen.getByRole('heading', { level: 1, name: 'Discover the moment. Not just the destination.' }),
     ).toBeInTheDocument()
-    expect(
-      screen.getByText(/Your AI travel companion helps you discover experiences nearby/),
-    ).toBeInTheDocument()
+    expect(screen.getByRole('region', { name: 'Map of results' })).toBeInTheDocument()
   })
 
   it('renders every interest option unselected by default', () => {
@@ -193,8 +191,13 @@ describe('TravelExplorerPage', () => {
     expect(screen.queryByRole('button', { name: 'Stop Exploring' })).not.toBeInTheDocument()
   })
 
-  it('renders the empty recommendation state before exploring starts', () => {
-    renderPage()
+  it('opens on the search tab and shows the Travel Mode empty state on its tab', async () => {
+    const user = renderPage()
+
+    expect(screen.getByRole('tab', { name: 'Search results' })).toHaveAttribute('aria-selected', 'true')
+    expect(screen.getByText('Search any place.')).toBeInTheDocument()
+
+    await user.click(screen.getByRole('tab', { name: 'Travel Mode' }))
 
     expect(screen.getByRole('heading', { name: 'Travel Mode results' })).toBeInTheDocument()
     expect(screen.getByText('Your next adventure starts here.')).toBeInTheDocument()

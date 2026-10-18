@@ -19,6 +19,8 @@ export interface NearbySearchState {
   errorMessage: string | null
   /** Human-readable place the current results are for. */
   locationLabel: string | null
+  /** Search centre, kept in memory only so the map can show it. */
+  center: LocationRequest | null
 }
 
 interface ActiveQuery {
@@ -30,7 +32,8 @@ interface ActiveQuery {
 export interface UseNearbySearchResult {
   state: NearbySearchState
   isBusy: boolean
-  search: (preferences: TravelerPreferences, target: SearchTarget, size: number) => Promise<void>
+  /** Resolves true when the first page loaded. */
+  search: (preferences: TravelerPreferences, target: SearchTarget, size: number) => Promise<boolean>
   goToPage: (page: number) => Promise<void>
 }
 
@@ -39,6 +42,7 @@ const INITIAL_STATE: NearbySearchState = {
   result: null,
   errorMessage: null,
   locationLabel: null,
+  center: null,
 }
 
 function locationErrorMessage(error: unknown): string {
@@ -64,18 +68,20 @@ export function useNearbySearch(): UseNearbySearchResult {
   }, [])
 
   const loadPage = useCallback(
-    async (query: ActiveQuery, page: number, controller: AbortController, locationLabel: string) => {
+    async (query: ActiveQuery, page: number, controller: AbortController, locationLabel: string): Promise<boolean> => {
       setState((previous) => ({ ...previous, status: 'LOADING', errorMessage: null, locationLabel }))
       try {
         const result = await searchRecommendations(query.preferences, query.location, page, query.size, {
           signal: controller.signal,
         })
-        if (controller.signal.aborted) return
-        setState({ status: 'SUCCESS', result, errorMessage: null, locationLabel })
+        if (controller.signal.aborted) return false
+        setState({ status: 'SUCCESS', result, errorMessage: null, locationLabel, center: query.location })
+        return true
       } catch (error) {
-        if (isAbortError(error) || controller.signal.aborted) return
+        if (isAbortError(error) || controller.signal.aborted) return false
         // Keep the previous page visible so a failed page change does not wipe the list.
         setState((previous) => ({ ...previous, status: 'ERROR', errorMessage: describeTravelApiError(error) }))
+        return false
       }
     },
     [],
@@ -91,9 +97,9 @@ export function useNearbySearch(): UseNearbySearchResult {
         try {
           location = await getCurrentLocation(controller.signal)
         } catch (error) {
-          if (isAbortError(error) || controller.signal.aborted) return
+          if (isAbortError(error) || controller.signal.aborted) return false
           setState({ ...INITIAL_STATE, status: 'ERROR', errorMessage: locationErrorMessage(error) })
-          return
+          return false
         }
         label = 'your current location'
       } else {
@@ -102,8 +108,8 @@ export function useNearbySearch(): UseNearbySearchResult {
       }
       const query: ActiveQuery = { preferences, location, size }
       queryRef.current = query
-      setState({ ...INITIAL_STATE, status: 'LOADING', locationLabel: label })
-      await loadPage(query, 0, controller, label)
+      setState({ ...INITIAL_STATE, status: 'LOADING', locationLabel: label, center: location })
+      return loadPage(query, 0, controller, label)
     },
     [loadPage, startRequest],
   )

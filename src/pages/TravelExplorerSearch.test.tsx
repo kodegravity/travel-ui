@@ -111,6 +111,38 @@ describe('Search nearby', () => {
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
   })
 
+  it('folds the controls into a summary after a search and reopens them on Edit search', async () => {
+    mockSearchBackend(3)
+    const user = await renderWithValidPreferences()
+
+    await user.click(searchButton())
+
+    await screen.findByText('Showing 1–3 of 3 places near Rome')
+    expect(screen.getByText('Art · €20.00 · 60 min · Rome · 10 per page')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Search nearby' })).not.toBeInTheDocument()
+    expect(screen.getByRole('tab', { name: 'Search results (3)' })).toHaveAttribute('aria-selected', 'true')
+
+    await user.click(screen.getByRole('button', { name: 'Edit search' }))
+
+    expect(searchButton()).toBeVisible()
+  })
+
+  it('numbers the cards to match the map pins and marks the selected one', async () => {
+    mockSearchBackend(12)
+    const user = await renderWithValidPreferences()
+    await user.selectOptions(screen.getByLabelText('Results per page'), '5')
+    await user.click(searchButton())
+    await screen.findByText('Showing 1–5 of 12 places near Rome')
+    await user.click(screen.getByRole('button', { name: 'Next' }))
+    await screen.findByText('Showing 6–10 of 12 places near Rome')
+
+    const pin = screen.getByRole('button', { name: 'Show Place 6 on the map' })
+    expect(pin).toHaveTextContent('6')
+    await user.click(pin)
+
+    expect(pin).toHaveAttribute('aria-pressed', 'true')
+  })
+
   it('does not search until the preferences are valid', async () => {
     const fetchMock = mockSearchBackend(3)
     render(<TravelExplorerPage />)

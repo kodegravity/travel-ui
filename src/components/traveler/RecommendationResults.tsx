@@ -1,5 +1,6 @@
 import { Compass } from 'lucide-react'
 import { Button } from '../common/Button'
+import { CardSkeletons } from '../common/CardSkeletons'
 import { EmptyState } from '../common/EmptyState'
 import type { TravelSessionPhase, TravelSessionState } from '../../hooks/useTravelSession'
 import { RecommendationCard } from './RecommendationCard'
@@ -9,6 +10,8 @@ export interface RecommendationResultsProps {
   isBusy: boolean
   canRefresh: boolean
   onRefresh: () => void
+  selectedId?: string | null
+  onSelect?: (placeId: string) => void
 }
 
 const PROGRESS_MESSAGES: Partial<Record<TravelSessionPhase, string>> = {
@@ -18,7 +21,14 @@ const PROGRESS_MESSAGES: Partial<Record<TravelSessionPhase, string>> = {
   STOPPING_SESSION: 'Stopping your travel session...',
 }
 
-export function RecommendationResults({ state, isBusy, canRefresh, onRefresh }: RecommendationResultsProps) {
+export function RecommendationResults({
+  state,
+  isBusy,
+  canRefresh,
+  onRefresh,
+  selectedId = null,
+  onSelect,
+}: RecommendationResultsProps) {
   const { phase, sessionId, recommendations, notice, errorMessage, failedAction } = state
   const progress = isBusy ? PROGRESS_MESSAGES[phase] : undefined
   const hasCards = recommendations.length > 0
@@ -50,11 +60,18 @@ export function RecommendationResults({ state, isBusy, canRefresh, onRefresh }: 
         </p>
       )}
 
+      {!hasCards && isBusy && phase !== 'STOPPING_SESSION' && <CardSkeletons />}
+
       {hasCards && (
         <ul className="recommendation-list" aria-label="Nearby recommendations">
-          {recommendations.map((recommendation) => (
+          {recommendations.map((recommendation, index) => (
             <li key={recommendation.placeId}>
-              <RecommendationCard recommendation={recommendation} />
+              <RecommendationCard
+                recommendation={recommendation}
+                number={onSelect ? index + 1 : undefined}
+                selected={recommendation.placeId === selectedId}
+                onSelect={onSelect}
+              />
             </li>
           ))}
         </ul>

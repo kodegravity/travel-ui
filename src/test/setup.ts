@@ -18,3 +18,6 @@ vi.mock('../config/okta', () => ({
   oktaAuth: null,
   getAccessToken: () => Promise.resolve(null),
 }))
+
+// Leaflet needs a real layout engine; jsdom has none. Page tests check the list, so the map renders nothing.
+vi.mock('../components/explorer/PlacesMap', () => ({ default: () => null }))

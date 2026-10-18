@@ -4,17 +4,38 @@ import { formatCategory, formatCost, isSafeMapsUrl } from '../../services/recomm
 
 export interface RecommendationCardProps {
   recommendation: RecommendationDto
+  /** 1-based number matching the map pin. Omitted when the card is shown without a map. */
+  number?: number
+  selected?: boolean
+  onSelect?: (placeId: string) => void
 }
 
-export function RecommendationCard({ recommendation }: RecommendationCardProps) {
-  const { name, category, description, estimatedCost, currencyCode, estimatedDurationMinutes, mapsUrl } =
+export function RecommendationCard({ recommendation, number, selected = false, onSelect }: RecommendationCardProps) {
+  const { placeId, name, category, description, estimatedCost, currencyCode, estimatedDurationMinutes, mapsUrl } =
     recommendation
 
   return (
-    <article className="recommendation-card">
-      <p className="recommendation-card__category">{formatCategory(category)}</p>
-      <h3 className="recommendation-card__name">{name}</h3>
-      {description && <p className="recommendation-card__description">{description}</p>}
+    <article
+      className={`recommendation-card${selected ? ' recommendation-card--selected' : ''}`}
+      data-place-id={placeId}
+    >
+      <div className="recommendation-card__top">
+        {number != null && (
+          <button
+            type="button"
+            className="recommendation-card__number"
+            aria-label={`Show ${name} on the map`}
+            aria-pressed={selected}
+            onClick={() => onSelect?.(placeId)}
+          >
+            {number}
+          </button>
+        )}
+        <div className="recommendation-card__heading">
+          <p className="recommendation-card__category">{formatCategory(category)}</p>
+          <h3 className="recommendation-card__name">{name}</h3>
+        </div>
+      </div>
 
       <ul className="recommendation-card__facts">
         <li>
@@ -32,6 +53,8 @@ export function RecommendationCard({ recommendation }: RecommendationCardProps) 
           </span>
         </li>
       </ul>
+
+      {description && <p className="recommendation-card__description">{description}</p>}
 
       {isSafeMapsUrl(mapsUrl) && (
         <a
