@@ -1,3 +1,4 @@
+import { ALL_CITIES } from '../data/destinations'
 import type { LocationRequest } from '../types/api'
 
 /** Where a one-off search is centred. */
@@ -6,18 +7,17 @@ export type SearchLocationMode = 'current' | 'city' | 'coordinates'
 export interface CityPreset {
   id: string
   label: string
+  country: string
   location: LocationRequest
 }
 
-/** City centres for trying the app without travelling. */
-export const CITY_PRESETS: readonly CityPreset[] = [
-  { id: 'rome', label: 'Rome', location: { latitude: 41.9028, longitude: 12.4964 } },
-  { id: 'paris', label: 'Paris', location: { latitude: 48.8566, longitude: 2.3522 } },
-  { id: 'london', label: 'London', location: { latitude: 51.5074, longitude: -0.1278 } },
-  { id: 'new-york', label: 'New York', location: { latitude: 40.758, longitude: -73.9855 } },
-  { id: 'toronto', label: 'Toronto', location: { latitude: 43.6532, longitude: -79.3832 } },
-  { id: 'tokyo', label: 'Tokyo', location: { latitude: 35.6812, longitude: 139.7671 } },
-]
+/** Every catalogue city, so Home and the explorer offer the same places. */
+export const CITY_PRESETS: readonly CityPreset[] = ALL_CITIES.map((city) => ({
+  id: city.id,
+  label: city.name,
+  country: city.country,
+  location: city.location,
+}))
 
 export const DEFAULT_CITY_ID = 'rome'
 

@@ -4,6 +4,8 @@ import App from './App.tsx'
 import './styles/variables.css'
 import './styles/global.css'
 import './styles/explorer.css'
+import './styles/travelmate.css'
+import './styles/home.css'
 
 const rootElement = document.getElementById('root')
 if (!rootElement) {

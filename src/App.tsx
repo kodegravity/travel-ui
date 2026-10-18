@@ -3,6 +3,7 @@ import { AuthProvider } from './auth/AuthProvider'
 import { ProtectedRoute } from './auth/ProtectedRoute'
 import { AuthCallbackPage } from './pages/AuthCallbackPage'
 import { LoginPage } from './pages/LoginPage'
+import { HomePage } from './pages/HomePage'
 import { TravelExplorerPage } from './pages/TravelExplorerPage'
 
 export default function App() {
@@ -12,8 +13,9 @@ export default function App() {
         <Routes>
           <Route path="/login" element={<LoginPage />} />
           <Route path="/login/callback" element={<AuthCallbackPage />} />
+          <Route path="/" element={<HomePage />} />
           <Route
-            path="/"
+            path="/explore"
             element={
               <ProtectedRoute>
                 <TravelExplorerPage />

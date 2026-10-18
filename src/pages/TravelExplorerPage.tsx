@@ -69,6 +69,8 @@ export function TravelExplorerPage() {
   const [lastSearch, setLastSearch] = useState<SearchSummary | null>(null)
   const [controlsOpen, setControlsOpen] = useState(true)
   const sideBySide = useMediaQuery(SIDE_BY_SIDE_QUERY)
+  // Home links here with ?city=<id> to preselect the city.
+  const [initialCityId] = useState(() => new URLSearchParams(window.location.search).get('city') ?? undefined)
   const toolbarRef = useRef<HTMLDivElement>(null)
 
   /** Phone only: swap list and map, and bring the toggle to the top so the map fills the screen. */
@@ -128,7 +130,7 @@ export function TravelExplorerPage() {
   const travelCount = state.recommendations.length
 
   return (
-    <AppLayout>
+    <AppLayout active="explore">
       <div className="explorer-shell" data-mobile-view={mobileView}>
         <aside className="explorer-panel" aria-label="Plan and results">
           <div className="explorer-panel__intro">
@@ -151,7 +153,11 @@ export function TravelExplorerPage() {
 
           <div className="explorer-panel__plan" hidden={!controlsOpen}>
             <TravelPreferencesForm preferences={preferences} />
-            <NearbySearchCard isBusy={nearbySearch.isBusy} onSearch={(target, size) => void handleSearch(target, size)} />
+            <NearbySearchCard
+              isBusy={nearbySearch.isBusy}
+              onSearch={(target, size) => void handleSearch(target, size)}
+              initialCityId={initialCityId}
+            />
           </div>
 
           <TravelModeCard

@@ -1,17 +1,19 @@
 import type { ReactNode } from 'react'
-import { Header } from './Header'
+import { Header, type NavKey } from './Header'
 
 export interface AppLayoutProps {
   children: ReactNode
+  /** Highlights the matching navbar link. */
+  active?: NavKey
 }
 
-export function AppLayout({ children }: AppLayoutProps) {
+export function AppLayout({ children, active }: AppLayoutProps) {
   return (
     <div className="app-shell">
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
-      <Header />
+      <Header active={active} />
       <main id="main-content" className="app-main">
         {children}
       </main>

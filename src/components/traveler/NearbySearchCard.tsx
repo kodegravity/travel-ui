@@ -11,11 +11,14 @@ import {
   type CoordinateErrors,
   type SearchLocationMode,
 } from '../../services/searchLocations'
+import { COUNTRIES } from '../../data/destinations'
 import { SEARCH_PAGE_SIZES, type SearchPageSize } from '../../types/api'
 
 export interface NearbySearchCardProps {
   isBusy: boolean
   onSearch: (target: SearchTarget, size: SearchPageSize) => void
+  /** City chosen elsewhere (for example on Home). Falls back to the default city. */
+  initialCityId?: string
 }
 
 const MODES: { value: SearchLocationMode; label: string }[] = [
@@ -24,9 +27,11 @@ const MODES: { value: SearchLocationMode; label: string }[] = [
   { value: 'coordinates', label: 'Coordinates' },
 ]
 
-export function NearbySearchCard({ isBusy, onSearch }: NearbySearchCardProps) {
+export function NearbySearchCard({ isBusy, onSearch, initialCityId }: NearbySearchCardProps) {
   const [mode, setMode] = useState<SearchLocationMode>('city')
-  const [cityId, setCityId] = useState(DEFAULT_CITY_ID)
+  const [cityId, setCityId] = useState(
+    initialCityId && findCityPreset(initialCityId) ? initialCityId : DEFAULT_CITY_ID,
+  )
   const [latitude, setLatitude] = useState('')
   const [longitude, setLongitude] = useState('')
   const [coordinateErrors, setCoordinateErrors] = useState<CoordinateErrors>({})
@@ -92,10 +97,14 @@ export function NearbySearchCard({ isBusy, onSearch }: NearbySearchCardProps) {
               City
             </label>
             <select id="search-city" className="input" value={cityId} onChange={(e) => setCityId(e.target.value)}>
-              {CITY_PRESETS.map((city) => (
-                <option key={city.id} value={city.id}>
-                  {city.label}
-                </option>
+              {COUNTRIES.map((country) => (
+                <optgroup key={country.name} label={country.name}>
+                  {CITY_PRESETS.filter((city) => city.country === country.name).map((city) => (
+                    <option key={city.id} value={city.id}>
+                      {city.label}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </div>
