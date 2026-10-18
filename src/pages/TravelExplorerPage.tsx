@@ -130,7 +130,7 @@ export function TravelExplorerPage() {
   const travelCount = state.recommendations.length
 
   return (
-    <AppLayout active="explore">
+    <AppLayout active="travel-mode">
       <div className="explorer-shell" data-mobile-view={mobileView}>
         <aside className="explorer-panel" aria-label="Plan and results">
           <div className="explorer-panel__intro">

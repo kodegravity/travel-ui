@@ -14,7 +14,7 @@ function renderHome() {
     <MemoryRouter initialEntries={['/']}>
       <Routes>
         <Route path="/" element={<HomePage />} />
-        <Route path="/explore" element={<ExploreProbe />} />
+        <Route path="/explore/:cityId" element={<ExploreProbe />} />
       </Routes>
     </MemoryRouter>,
   )
@@ -122,8 +122,7 @@ describe('HomePage', () => {
     await user.click(exploreButton())
 
     const url = new URL(screen.getByTestId('explore-url').textContent!, 'http://app')
-    expect(url.pathname).toBe('/explore')
-    expect(url.searchParams.get('city')).toBe('seville')
+    expect(url.pathname).toBe('/explore/seville')
     expect(url.searchParams.get('travelers')).toBe('3')
     expect(url.searchParams.get('arrive')).toMatch(/^\d{4}-\d{2}-\d{2}$/)
   })
@@ -143,6 +142,6 @@ describe('HomePage', () => {
     await user.click(screen.getByRole('button', { name: 'Málaga' }))
     await user.click(exploreButton())
 
-    expect(screen.getByTestId('explore-url').textContent).toContain('city=malaga')
+    expect(screen.getByTestId('explore-url').textContent).toMatch(/^\/explore\/malaga\?/)
   })
 })

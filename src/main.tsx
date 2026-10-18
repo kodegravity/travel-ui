@@ -6,6 +6,7 @@ import './styles/global.css'
 import './styles/explorer.css'
 import './styles/travelmate.css'
 import './styles/home.css'
+import './styles/explore-page.css'
 
 const rootElement = document.getElementById('root')
 if (!rootElement) {

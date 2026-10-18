@@ -52,12 +52,11 @@ export function HomePage() {
 
   function explore(trip: TripRequest) {
     const params = new URLSearchParams({
-      city: trip.cityId,
       arrive: trip.arrive,
       depart: trip.depart,
       travelers: String(trip.travelers),
     })
-    navigate(`/explore?${params.toString()}`)
+    navigate(`/explore/${trip.cityId}?${params.toString()}`)
   }
 
   return (
