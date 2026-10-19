@@ -12,6 +12,7 @@ import './styles/trip-page.css'
 import './styles/route-page.css'
 import './styles/itinerary-page.css'
 import './styles/live-events.css'
+import './styles/assistant.css'
 import { registerNotificationWorker } from './services/notifications'
 
 const rootElement = document.getElementById('root')

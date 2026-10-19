@@ -185,3 +185,56 @@ export interface LiveSuggestion {
   /** True when the AI chose the event and wrote the text. */
   aiWritten: boolean
 }
+
+/** "Ask ROAM" chat. The app keeps the conversation and sends the recent turns each time; nothing is stored. */
+export interface ChatTurn {
+  role: 'USER' | 'ASSISTANT'
+  content: string
+}
+
+export interface ChatContext {
+  /** Where the traveler is, when they share it; otherwise the city centre. */
+  location?: LocationRequest
+  placeName?: string
+  /** Local date and time, such as 2026-10-19T14:30. */
+  localDateTime: string
+  interests?: string[]
+  maxBudget?: number
+  currencyCode?: string
+  availableMinutes?: number
+  tripStops?: string[]
+}
+
+export interface ChatRequest {
+  messages: ChatTurn[]
+  context: ChatContext
+}
+
+export interface ChatSuggestion {
+  placeId: string
+  name: string
+  categories: string[]
+  latitude: number
+  longitude: number
+  distanceKm?: number
+  estimatedDurationMinutes?: number
+  estimatedCost?: number
+  currencyCode?: string
+  reason: string
+}
+
+export interface ChatWeather {
+  summary: string
+  temperatureC?: number
+  rainLikely: boolean
+  rainChancePct?: number
+  isDay: boolean
+}
+
+export interface ChatReply {
+  reply: string
+  suggestions: ChatSuggestion[]
+  weather?: ChatWeather
+  /** False when the AI was unavailable and the answer is rule-based. */
+  aiWritten: boolean
+}

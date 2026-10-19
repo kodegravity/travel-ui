@@ -5,6 +5,8 @@ import {
   REFRESH_STATUSES,
   type ApiProblem,
   type CreateTravelSessionRequest,
+  type ChatReply,
+  type ChatRequest,
   type CreateTravelSessionResponse,
   type EventType,
   type LiveSuggestion,
@@ -24,6 +26,7 @@ const SESSIONS_PATH = '/api/v1/travel-sessions'
 const RECOMMENDATIONS_PATH = '/api/v1/recommendations'
 const PLACES_PATH = '/api/v1/places'
 const ROUTES_PATH = '/api/v1/routes/optimize'
+const CHAT_PATH = '/api/v1/chat'
 
 export interface TravelApiRequestOptions {
   signal?: AbortSignal
@@ -388,6 +391,36 @@ export async function optimizeRoute(
   if (!isOptimizedRoute(body, request.stops.length) || !body.order.every((id) => ids.has(id))) {
     throw invalidResponse(response.status)
   }
+  return body
+}
+
+function isChatReply(value: unknown): value is ChatReply {
+  if (!isRecord(value) || typeof value.reply !== 'string' || typeof value.aiWritten !== 'boolean') return false
+  if (!Array.isArray(value.suggestions)) return false
+  const suggestionsOk = value.suggestions.every(
+    (s) =>
+      isRecord(s) &&
+      typeof s.placeId === 'string' &&
+      typeof s.name === 'string' &&
+      Array.isArray(s.categories) &&
+      typeof s.latitude === 'number' &&
+      typeof s.longitude === 'number' &&
+      typeof s.reason === 'string',
+  )
+  const weatherOk =
+    value.weather === undefined ||
+    (isRecord(value.weather) && typeof value.weather.summary === 'string' && typeof value.weather.rainLikely === 'boolean')
+  return suggestionsOk && weatherOk
+}
+
+/**
+ * POST /api/v1/chat: one "Ask ROAM" reply. Each call can cost one OpenAI reply (capped per day on the backend), and
+ * at most one Google search per area every 15 minutes.
+ */
+export async function askRoam(request: ChatRequest, options: TravelApiRequestOptions = {}): Promise<ChatReply> {
+  const response = await send('POST', CHAT_PATH, request, options.signal)
+  const body = await readJson(response)
+  if (!isChatReply(body)) throw invalidResponse(response.status)
   return body
 }
 
