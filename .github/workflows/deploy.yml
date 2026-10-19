@@ -1,0 +1,88 @@
+name: Deploy web app
+
+# Every push to main is tested, built, and published to S3 behind CloudFront (infra/terraform/frontend in the backend
+# repository). Pull requests and manual runs only test and build.
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-web
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  AWS_REGION: us-east-2
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npx tsc -p tsconfig.app.json --noEmit
+      - run: npx eslint src
+      - run: npx vitest run
+      - run: npm run build
+
+  deploy:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # No `environment:` here: it would change the OIDC subject, and the AWS role trusts only refs/heads/main.
+    # id-token: write lets this job request a short-lived OIDC token. No AWS access keys are stored in GitHub.
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # The maps key is a browser key, public by design once built into the page; it lives in Secrets Manager so it
+      # is not committed. Saved as key/value in the console, the secret is JSON: use its first value.
+      - name: Read the Google Maps browser key
+        run: |
+          raw=$(aws secretsmanager get-secret-value --secret-id ai-travel-app/google-maps-browser-key \
+            --query SecretString --output text)
+          key=$(printf '%s' "$raw" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{let v=s.trim();if(v.startsWith("{"))v=String(Object.values(JSON.parse(v))[0]??"");process.stdout.write(v.trim())})')
+          echo "::add-mask::$key"
+          echo "VITE_GOOGLE_MAPS_API_KEY=$key" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: npm run build
+        env:
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_OKTA_ISSUER: ${{ vars.VITE_OKTA_ISSUER }}
+          VITE_OKTA_CLIENT_ID: ${{ vars.VITE_OKTA_CLIENT_ID }}
+          VITE_OKTA_REDIRECT_URI: ${{ vars.SITE_URL }}/login/callback
+
+      # Hashed assets never change, so browsers may keep them; index.html must always be re-checked so a deploy
+      # takes effect on the next visit.
+      - name: Upload
+        run: |
+          aws s3 sync dist/assets "s3://${{ vars.WEB_BUCKET }}/assets" --delete \
+            --cache-control "public, max-age=31536000, immutable"
+          aws s3 sync dist "s3://${{ vars.WEB_BUCKET }}" --delete --exclude "assets/*" \
+            --cache-control "no-cache"
+
+      - name: Refresh CloudFront
+        run: |
+          aws cloudfront create-invalidation --distribution-id "${{ vars.CLOUDFRONT_DISTRIBUTION_ID }}" \
+            --paths "/index.html" "/" --query 'Invalidation.Id' --output text
