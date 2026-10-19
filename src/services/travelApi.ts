@@ -1,10 +1,13 @@
 import { API_BASE_URL } from '../config/env'
 import { getAccessToken, oktaAuth } from '../config/okta'
 import {
+  EVENT_TYPES,
   REFRESH_STATUSES,
   type ApiProblem,
   type CreateTravelSessionRequest,
   type CreateTravelSessionResponse,
+  type EventType,
+  type LiveSuggestion,
   type LocationRequest,
   type PagedRecommendationResponse,
   type OptimizedRoute,
@@ -84,6 +87,23 @@ function isRecommendationDto(value: unknown): value is RecommendationDto {
   )
 }
 
+function isLiveSuggestion(value: unknown): value is LiveSuggestion {
+  if (!isRecord(value) || !isRecord(value.event)) return false
+  const event = value.event
+  return (
+    typeof value.headline === 'string' &&
+    typeof value.message === 'string' &&
+    typeof value.aiWritten === 'boolean' &&
+    typeof event.id === 'string' &&
+    typeof event.name === 'string' &&
+    EVENT_TYPES.includes(event.type as EventType) &&
+    typeof event.source === 'string' &&
+    (event.startsAt === undefined || (typeof event.startsAt === 'string' && Number.isFinite(Date.parse(event.startsAt)))) &&
+    (event.url === undefined || (typeof event.url === 'string' && event.url.startsWith('https://'))) &&
+    (event.imageUrl === undefined || (typeof event.imageUrl === 'string' && event.imageUrl.startsWith('https://')))
+  )
+}
+
 function isRecommendationResponse(value: unknown): value is TravelSessionRecommendationResponse {
   return (
     isRecord(value) &&
@@ -91,7 +111,9 @@ function isRecommendationResponse(value: unknown): value is TravelSessionRecomme
     typeof value.generatedAt === 'string' && Number.isFinite(Date.parse(value.generatedAt)) &&
     REFRESH_STATUSES.includes(value.refreshStatus as TravelSessionRecommendationResponse['refreshStatus']) &&
     Array.isArray(value.recommendations) &&
-    value.recommendations.every(isRecommendationDto)
+    value.recommendations.every(isRecommendationDto) &&
+    (value.liveSuggestions === undefined ||
+      (Array.isArray(value.liveSuggestions) && value.liveSuggestions.every(isLiveSuggestion)))
   )
 }
 
@@ -243,15 +265,25 @@ export async function createTravelSession(
 }
 
 /** POST /api/v1/travel-sessions/{sessionId}/recommendations with the current location. */
+export interface LiveEventOptions {
+  /** Kinds of event to alert about; empty turns live alerts off. */
+  eventTypes: readonly EventType[]
+  /** Events already shown in this session, so they are not suggested again. */
+  seenEventIds: readonly string[]
+}
+
 export async function getSessionRecommendations(
   sessionId: string,
   location: LocationRequest,
-  options: TravelApiRequestOptions = {},
+  options: TravelApiRequestOptions & { live?: LiveEventOptions } = {},
 ): Promise<TravelSessionRecommendationResponse> {
+  const live = options.live && options.live.eventTypes.length > 0
+    ? { eventTypes: [...options.live.eventTypes], seenEventIds: options.live.seenEventIds.slice(-200) }
+    : {}
   const response = await send(
     'POST',
     `${SESSIONS_PATH}/${encodeURIComponent(sessionId)}/recommendations`,
-    { location: { latitude: location.latitude, longitude: location.longitude } },
+    { location: { latitude: location.latitude, longitude: location.longitude }, ...live },
     options.signal,
   )
   const body = await readJson(response)

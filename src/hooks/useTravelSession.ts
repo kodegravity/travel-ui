@@ -15,8 +15,15 @@ import {
   describeTravelApiError,
   stopTravelSession,
 } from '../services/travelApi'
-import type { RecommendationDto, RefreshStatus, TravelSessionRecommendationResponse } from '../types/api'
+import type {
+  EventType,
+  LiveSuggestion,
+  RecommendationDto,
+  RefreshStatus,
+  TravelSessionRecommendationResponse,
+} from '../types/api'
 import type { TravelerPreferences } from '../types/travel'
+import { notifyLiveEvents } from '../services/notifications'
 
 export type TravelSessionPhase =
   | 'IDLE'
@@ -47,6 +54,9 @@ const GPS_JITTER_METERS = 25
 /** A watched position older than this is not reused for an automatic refresh. */
 const WATCHED_LOCATION_MAX_AGE_MS = 10 * 60 * 1000
 
+/** Alerts kept on screen per session. */
+const MAX_LIVE_EVENTS = 10
+
 /** Which user action failed. Decides which recovery button is offered. */
 export type FailedAction = 'start' | 'refresh' | 'stop'
 
@@ -69,6 +79,10 @@ export interface TravelSessionState {
   liveSuggestion: RecommendationDto | null
   newRecommendationIds: string[]
   locationNotice: string | null
+  /** Live event alerts for this session, newest first. */
+  liveEvents: LiveSuggestion[]
+  /** Alerts that arrived with the latest check, for highlighting. */
+  newLiveEventIds: string[]
 }
 
 export const SESSION_ENDED_NOTICE =
@@ -91,12 +105,15 @@ export const initialTravelSessionState: TravelSessionState = {
   liveSuggestion: null,
   newRecommendationIds: [],
   locationNotice: null,
+  liveEvents: [],
+  newLiveEventIds: [],
 }
 
 type TravelSessionAction =
   | { type: 'BUSY'; phase: BusyPhase }
   | { type: 'LOCATION_SHARED' }
   | { type: 'SESSION_CREATED'; sessionId: string }
+  | { type: 'DISMISS_LIVE_EVENT'; eventId: string }
   | { type: 'RECOMMENDATIONS_RECEIVED'; response: TravelSessionRecommendationResponse; initial: boolean }
   | { type: 'CHECKING'; checking: boolean }
   | { type: 'LIVE_ENABLED'; enabled: boolean }
@@ -143,6 +160,12 @@ function reducer(state: TravelSessionState, action: TravelSessionAction): Travel
       return { ...state, liveSuggestionsEnabled: action.enabled, liveSuggestion: null, newRecommendationIds: [] }
     case 'DISMISS_SUGGESTION':
       return { ...state, liveSuggestion: null }
+    case 'DISMISS_LIVE_EVENT':
+      return {
+        ...state,
+        liveEvents: state.liveEvents.filter((item) => item.event.id !== action.eventId),
+        newLiveEventIds: state.newLiveEventIds.filter((id) => id !== action.eventId),
+      }
     case 'SESSION_CREATED':
       return { ...state, sessionId: action.sessionId }
     case 'RECOMMENDATIONS_RECEIVED': {
@@ -158,6 +181,8 @@ function reducer(state: TravelSessionState, action: TravelSessionAction): Travel
       const newPlaces = !action.initial && refreshStatus === 'UPDATED'
         ? merged.filter((item) => !previousIds.has(item.placeId))
         : []
+      const shownEvents = new Set(state.liveEvents.map((item) => item.event.id))
+      const freshEvents = (action.response.liveSuggestions ?? []).filter((item) => !shownEvents.has(item.event.id))
       return {
         ...state,
         phase: merged.length > 0 ? 'ACTIVE' : 'EMPTY_RESULTS',
@@ -172,6 +197,8 @@ function reducer(state: TravelSessionState, action: TravelSessionAction): Travel
         liveSuggestion: state.liveSuggestionsEnabled
           ? state.liveSuggestion ?? newPlaces[0] ?? null
           : null,
+        liveEvents: [...freshEvents, ...state.liveEvents].slice(0, MAX_LIVE_EVENTS),
+        newLiveEventIds: freshEvents.map((item) => item.event.id),
       }
     }
     case 'FAILED':
@@ -198,6 +225,7 @@ export interface TravelSessionController {
   stop: () => Promise<void>
   setLiveSuggestionsEnabled: (enabled: boolean) => void
   dismissSuggestion: () => void
+  dismissLiveEvent: (eventId: string) => void
 }
 
 interface WatchedFix {
@@ -215,8 +243,19 @@ function throwIfAborted(signal: AbortSignal) {
  * Owns the Start / Refresh / Stop Exploring workflow and automatic monitoring.
  * Refs guard against duplicate requests before React re-renders, and stale responses are ignored after stop or unmount.
  */
+export interface TravelSessionOptions {
+  refreshThrottleMs?: number
+  /** Kinds of live event to alert about; empty turns event alerts off. */
+  eventTypes?: readonly EventType[]
+  /**
+   * Keep watching location and checking while the tab is hidden, so an alert can arrive as a notification. Only
+   * meaningful with notifications allowed and event alerts on; otherwise hidden tabs use no GPS, as before.
+   */
+  backgroundAlerts?: boolean
+}
+
 export function useTravelSession(
-  { refreshThrottleMs = LIVE_REFRESH_THROTTLE_MS }: { refreshThrottleMs?: number } = {},
+  { refreshThrottleMs = LIVE_REFRESH_THROTTLE_MS, eventTypes = [], backgroundAlerts = false }: TravelSessionOptions = {},
 ): TravelSessionController {
   const [state, dispatch] = useReducer(reducer, initialTravelSessionState)
   const busyRef = useRef(false)
@@ -234,6 +273,15 @@ export function useTravelSession(
   const automaticPausedRef = useRef(false)
   const monitoringStoppedRef = useRef(false)
   const stoppingRef = useRef(false)
+  const eventTypesRef = useRef<readonly EventType[]>(eventTypes)
+  const backgroundRef = useRef(backgroundAlerts && eventTypes.length > 0)
+  /** Events already shown in this session; sent with each check so the backend skips them. Memory only. */
+  const seenEventIdsRef = useRef<Set<string>>(new Set())
+
+  useEffect(() => {
+    eventTypesRef.current = eventTypes
+    backgroundRef.current = backgroundAlerts && eventTypes.length > 0
+  })
 
   useEffect(() => {
     return () => {
@@ -294,6 +342,8 @@ export function useTravelSession(
 
     const onVisibilityChange = () => {
       if (document.hidden) {
+        // With background alerts on, keep watching so a live event can still arrive as a notification.
+        if (backgroundRef.current) return
         stopWatchingNow()
         abortAutoRefresh()
         return
@@ -392,11 +442,17 @@ export function useTravelSession(
   ) {
     lastAttemptAtRef.current = Date.now()
     lastSubmittedLocationRef.current = location
-    const response = await getSessionRecommendations(sessionId, location, { signal })
+    const response = await getSessionRecommendations(sessionId, location, {
+      signal,
+      live: { eventTypes: eventTypesRef.current, seenEventIds: [...seenEventIdsRef.current] },
+    })
     throwIfAborted(signal)
     if (sessionIdRef.current !== sessionId) return
     lastSuccessAtRef.current = Date.now()
+    const fresh = (response.liveSuggestions ?? []).filter((item) => !seenEventIdsRef.current.has(item.event.id))
+    fresh.forEach((item) => seenEventIdsRef.current.add(item.event.id))
     dispatch({ type: 'RECOMMENDATIONS_RECEIVED', response, initial })
+    void notifyLiveEvents(fresh)
   }
 
   async function start(preferences: TravelerPreferences) {
@@ -416,6 +472,7 @@ export function useTravelSession(
         throwIfAborted(signal)
       }
       sessionIdRef.current = session.sessionId
+      seenEventIdsRef.current = new Set()
       automaticPausedRef.current = false
       monitoringStoppedRef.current = false
       lastSuccessAtRef.current = null
@@ -454,8 +511,8 @@ export function useTravelSession(
     const sessionId = sessionIdRef.current
     if (sessionId === null || busyRef.current || autoBusyRef.current ||
       !liveEnabledRef.current || automaticPausedRef.current || monitoringStoppedRef.current) return
-    // Pause while the tab is hidden to save backend and provider calls.
-    if (document.hidden) return
+    // Pause while the tab is hidden to save backend and provider calls, unless background alerts are on.
+    if (document.hidden && !backgroundRef.current) return
     if (lastAttemptAtRef.current !== null && Date.now() - lastAttemptAtRef.current < refreshThrottleMs) return
 
     autoBusyRef.current = true
@@ -548,5 +605,6 @@ export function useTravelSession(
     stop,
     setLiveSuggestionsEnabled,
     dismissSuggestion: () => dispatch({ type: 'DISMISS_SUGGESTION' }),
+    dismissLiveEvent: (eventId: string) => dispatch({ type: 'DISMISS_LIVE_EVENT', eventId }),
   }
 }

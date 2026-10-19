@@ -80,10 +80,14 @@ export function TravelModeCard({
         <div className="travel-mode__alerts">
           {notificationStatus === 'default' && (
             <Button variant="secondary" className="btn--block" onClick={onEnableNotifications}>
-              Alert me to new places
+              Alert me to new places and events
             </Button>
           )}
-          {notificationStatus === 'granted' && <p className="field-hint">New-place alerts are on while this tab is open.</p>}
+          {notificationStatus === 'granted' && (
+            <p className="field-hint">
+              Alerts are on. Live events can reach you even with this tab in the background, while it stays open.
+            </p>
+          )}
           {notificationStatus === 'denied' && (
             <p className="field-hint">Notifications are blocked. Allow them in your browser settings to get alerts.</p>
           )}

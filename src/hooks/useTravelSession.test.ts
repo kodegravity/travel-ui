@@ -279,3 +279,92 @@ describe('proactive foreground exploration', () => {
     expect(removeListener).toHaveBeenCalledWith('visibilitychange', expect.any(Function))
   })
 })
+
+describe('live event alerts', () => {
+  const game = {
+    event: {
+      id: 'G1', name: 'Roma vs Lazio', type: 'SPORTS', venueName: 'Stadio Olimpico', distanceKm: 3.1,
+      startsAt: '2030-01-01T19:45:00Z', url: 'https://www.ticketmaster.it/event/G1', source: 'ticketmaster',
+    },
+    headline: 'Derby night nearby', message: 'The Rome derby, a short ride away.', aiWritten: true,
+  }
+  const concert = {
+    event: { id: 'C1', name: 'Jazz Night', type: 'MUSIC', source: 'ticketmaster' },
+    headline: 'Live music nearby: Jazz Night', message: 'About 0.4 km from you.', aiWritten: false,
+  }
+
+  function withLive(status: RefreshStatus, live: unknown[], places: RecommendationDto[] = []): Response {
+    return json(200, {
+      sessionId: 'session', refreshStatus: status, recommendations: places, generatedAt: new Date().toISOString(),
+      liveSuggestions: live,
+    })
+  }
+
+  function body(call: unknown[]) {
+    return JSON.parse(String((call[1] as RequestInit).body))
+  }
+
+  async function startWith(options: Parameters<typeof useTravelSession>[0]) {
+    const hook = renderHook(() => useTravelSession(options))
+    await act(async () => { await hook.result.current.start(preferences) })
+    return hook
+  }
+
+  it('collects alerts newest first and never asks for an event twice', async () => {
+    responses = [() => withLive('UPDATED', [game], [first]), () => withLive('NO_NEW_RESULTS', [concert])]
+    const { result } = await startWith({ eventTypes: ['SPORTS', 'MUSIC'] })
+
+    expect(result.current.state.liveEvents.map((item) => item.event.id)).toEqual(['G1'])
+    expect(body(refreshCalls()[0]!)).toMatchObject({ eventTypes: ['SPORTS', 'MUSIC'], seenEventIds: [] })
+
+    await move()
+    await advance(LIVE_REFRESH_THROTTLE_MS)
+
+    expect(body(refreshCalls()[1]!).seenEventIds).toEqual(['G1'])
+    expect(result.current.state.liveEvents.map((item) => item.event.id)).toEqual(['C1', 'G1'])
+    expect(result.current.state.newLiveEventIds).toEqual(['C1'])
+
+    act(() => result.current.dismissLiveEvent('C1'))
+    expect(result.current.state.liveEvents.map((item) => item.event.id)).toEqual(['G1'])
+  })
+
+  it('sends no event options when alerts are off', async () => {
+    await startWith({ eventTypes: [] })
+
+    expect(body(refreshCalls()[0]!)).toEqual({ location: { latitude: rome.latitude, longitude: rome.longitude } })
+  })
+
+  it('keeps watching in a background tab only with background alerts on', async () => {
+    const quiet = await startWith({ eventTypes: ['SPORTS'] })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+    expect(navigator.geolocation.clearWatch).toHaveBeenCalledTimes(1)
+    quiet.unmount()
+
+    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
+    vi.mocked(navigator.geolocation.clearWatch).mockClear()
+    await startWith({ eventTypes: ['SPORTS'], backgroundAlerts: true })
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+    expect(navigator.geolocation.clearWatch).not.toHaveBeenCalled()
+  })
+
+  it('shows a system notification for new alerts that arrive while the tab is hidden', async () => {
+    const shown: string[] = []
+    class FakeNotification {
+      static permission = 'granted'
+      onclick: (() => void) | null = null
+      constructor(title: string) { shown.push(title) }
+      close() {}
+    }
+    vi.stubGlobal('Notification', FakeNotification)
+    responses = [() => withLive('UPDATED', [], [first]), () => withLive('NO_NEW_RESULTS', [game])]
+    await startWith({ eventTypes: ['SPORTS'], backgroundAlerts: true })
+
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    await move()
+    await advance(LIVE_REFRESH_THROTTLE_MS)
+
+    expect(shown).toEqual(['Derby night nearby'])
+  })
+})

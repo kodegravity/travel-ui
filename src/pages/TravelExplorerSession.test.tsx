@@ -164,8 +164,11 @@ describe('Start Exploring', () => {
 
     const [recsUrl, recsInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit]
     expect(String(recsUrl)).toBe(`http://localhost:8080/api/v1/travel-sessions/${SESSION_ID}/recommendations`)
+    // Only the location, plus which kinds of live event to alert about (none seen yet). Nothing else leaves the device.
     expect(JSON.parse(String(recsInit?.body))).toEqual({
       location: { latitude: 41.9028, longitude: 12.4964 },
+      eventTypes: ['SPORTS', 'MUSIC', 'ARTS', 'FAMILY'],
+      seenEventIds: [],
     })
 
     expect(screen.getByText('Exploring')).toBeInTheDocument()

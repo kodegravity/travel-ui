@@ -21,6 +21,8 @@ import {
   requestNotificationPermission,
   type NotificationStatus,
 } from '../services/notifications'
+import { LiveEventsPanel } from '../components/traveler/LiveEventsPanel'
+import { useLiveEventTypes } from '../services/liveEventPrefs'
 
 // Leaflet is only needed once the map is on screen, so it loads in its own chunk.
 const PlacesMap = lazy(() => import('../components/explorer/PlacesMap'))
@@ -60,10 +62,11 @@ function scrollCardIntoView(placeId: string) {
 
 export function TravelExplorerPage() {
   const preferences = useTravelPreferences()
-  const session = useTravelSession()
+  const [notificationStatus, setNotificationStatus] = useState<NotificationStatus>(getNotificationStatus)
+  const eventTypes = useLiveEventTypes()
+  const session = useTravelSession({ eventTypes, backgroundAlerts: notificationStatus === 'granted' })
   const nearbySearch = useNearbySearch()
   const { state } = session
-  const [notificationStatus, setNotificationStatus] = useState<NotificationStatus>(getNotificationStatus)
   const [activeTab, setActiveTab] = useState<ResultsTab>('search')
   const [mobileView, setMobileView] = useState<MobileView>('list')
   const [selectedId, setSelectedId] = useState<string | null>(null)
@@ -175,6 +178,14 @@ export function TravelExplorerPage() {
           />
 
           <SuggestionAlert suggestion={state.liveSuggestion} onDismiss={session.dismissSuggestion} />
+
+          <LiveEventsPanel
+            eventTypes={eventTypes}
+            hasSession={state.sessionId !== null}
+            events={state.liveEvents}
+            newEventIds={state.newLiveEventIds}
+            onDismiss={session.dismissLiveEvent}
+          />
 
           <div className="results-toolbar" ref={toolbarRef}>
             <div className="results-tabs" role="tablist" aria-label="Results">

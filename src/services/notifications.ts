@@ -1,4 +1,4 @@
-import type { RecommendationDto } from '../types/api'
+import type { LiveSuggestion, RecommendationDto } from '../types/api'
 
 export type NotificationStatus = NotificationPermission | 'unsupported'
 
@@ -30,5 +30,66 @@ export function notifyNewPlaces(places: RecommendationDto[]): void {
   notification.onclick = () => {
     window.focus()
     notification.close()
+  }
+}
+
+/**
+ * Registers the notification-only service worker. Android Chrome can show notifications only through one, and a
+ * click on a notification brings the app back. Best effort: without it, desktop browsers still notify.
+ */
+export function registerNotificationWorker(): void {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return
+  void navigator.serviceWorker.register('/sw.js').catch(() => undefined)
+}
+
+/**
+ * "9:00 PM", or "Tomorrow 2:25 AM" / "Sat 9:00 PM" when it is not today, in the traveler's own time zone (they are
+ * where the event is).
+ */
+export function formatEventStart(startsAt: string | undefined, localTime?: string, now = new Date()): string | null {
+  if (startsAt) {
+    const start = new Date(startsAt)
+    const time = start.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })
+    const days = Math.round(
+      (new Date(start.getFullYear(), start.getMonth(), start.getDate()).getTime() -
+        new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime()) / 86_400_000,
+    )
+    if (days === 0) return time
+    if (days === 1) return `Tomorrow ${time}`
+    return `${start.toLocaleDateString([], { weekday: 'short' })} ${time}`
+  }
+  return localTime ? localTime.slice(0, 5) : null
+}
+
+/**
+ * A system notification for each new live event alert, while the tab is in the background; in the foreground the
+ * page shows the alert itself. Uses the service worker when there is one (required on Android), else the page.
+ */
+export async function notifyLiveEvents(suggestions: readonly LiveSuggestion[]): Promise<void> {
+  if (suggestions.length === 0 || getNotificationStatus() !== 'granted' || !document.hidden) return
+  const registration =
+    'serviceWorker' in navigator ? await navigator.serviceWorker.getRegistration().catch(() => undefined) : undefined
+  for (const suggestion of suggestions.slice(0, 2)) {
+    const start = formatEventStart(suggestion.event.startsAt, suggestion.event.localTime)
+    const body = start ? `${suggestion.message} Starts ${start}.` : suggestion.message
+    const options: NotificationOptions = {
+      body,
+      tag: `live-event-${suggestion.event.id}`,
+      icon: '/favicon.svg',
+      data: { url: '/travel-mode' },
+    }
+    try {
+      if (registration) {
+        await registration.showNotification(suggestion.headline, options)
+      } else {
+        const notification = new Notification(suggestion.headline, options)
+        notification.onclick = () => {
+          window.focus()
+          notification.close()
+        }
+      }
+    } catch {
+      // Some browsers refuse page notifications; the alert still shows when the tab is opened.
+    }
   }
 }

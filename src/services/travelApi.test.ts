@@ -207,3 +207,29 @@ describe('error helpers', () => {
     ).toBe(false)
   })
 })
+
+describe('live event alerts on refresh', () => {
+  it('sends event types and seen ids only when alerts are on, and drops unsafe event links', async () => {
+    const calls: RequestInit[] = []
+    vi.stubGlobal('fetch', vi.fn(async (_url: string, init: RequestInit) => {
+      calls.push(init)
+      return new Response(JSON.stringify({
+        sessionId: 's1', refreshStatus: 'NO_NEW_RESULTS', recommendations: [], generatedAt: '2030-01-01T00:00:00Z',
+        liveSuggestions: [{ event: { id: 'G1', name: 'Game', type: 'SPORTS', source: 'ticketmaster', url: 'http://phish.example' },
+          headline: 'Game', message: 'Near you.', aiWritten: false }],
+      }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }))
+
+    await expect(getSessionRecommendations('s1', { latitude: 1, longitude: 2 }, {
+      live: { eventTypes: ['SPORTS'], seenEventIds: ['C1'] },
+    })).rejects.toThrow()
+    expect(JSON.parse(String(calls[0]!.body))).toEqual({
+      location: { latitude: 1, longitude: 2 }, eventTypes: ['SPORTS'], seenEventIds: ['C1'],
+    })
+
+    await expect(getSessionRecommendations('s1', { latitude: 1, longitude: 2 }, {
+      live: { eventTypes: [], seenEventIds: ['C1'] },
+    })).rejects.toThrow()
+    expect(JSON.parse(String(calls[1]!.body))).toEqual({ location: { latitude: 1, longitude: 2 } })
+  })
+})

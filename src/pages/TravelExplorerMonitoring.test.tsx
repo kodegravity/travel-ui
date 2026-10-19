@@ -260,11 +260,11 @@ describe('Travel session monitoring', () => {
     render(<TravelExplorerPage />)
     await startSession(user)
 
-    await user.click(screen.getByRole('button', { name: 'Alert me to new places' }))
+    await user.click(screen.getByRole('button', { name: 'Alert me to new places and events' }))
 
     expect(requestPermission).toHaveBeenCalledTimes(1)
-    expect(await screen.findByText(/New-place alerts are on/)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Alert me to new places' })).not.toBeInTheDocument()
+    expect(await screen.findByText(/Alerts are on/)).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Alert me to new places and events' })).not.toBeInTheDocument()
   })
 
   it('stops monitoring immediately while termination is pending and keeps it stopped after failure', async () => {

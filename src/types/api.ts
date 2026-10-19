@@ -50,6 +50,8 @@ export interface TravelSessionRecommendationResponse {
   refreshStatus: RefreshStatus
   recommendations: RecommendationDto[]
   generatedAt: string
+  /** Live event alerts; absent from older backends, empty when alerts are off or nothing new is on. */
+  liveSuggestions?: LiveSuggestion[]
 }
 
 /** POST /api/v1/recommendations body: a one-off search at a location. */
@@ -151,4 +153,35 @@ export interface OptimizedRoute {
   durationSeconds: number
   /** "google" for street routes, "estimate" for distance-based estimates. */
   source: string
+}
+
+export const EVENT_TYPES = ['SPORTS', 'MUSIC', 'ARTS', 'FAMILY', 'OTHER'] as const
+export type EventType = (typeof EVENT_TYPES)[number]
+
+/** A ticketed event near the traveler. Times and venue come from the event source, never from the AI. */
+export interface LiveEvent {
+  id: string
+  name: string
+  type: EventType
+  genre?: string
+  venueName?: string
+  latitude?: number
+  longitude?: number
+  /** ISO instant; absent when only a date is announced. */
+  startsAt?: string
+  localDate?: string
+  localTime?: string
+  distanceKm?: number
+  url?: string
+  imageUrl?: string
+  /** "ticketmaster" or "sample". */
+  source: string
+}
+
+export interface LiveSuggestion {
+  event: LiveEvent
+  headline: string
+  message: string
+  /** True when the AI chose the event and wrote the text. */
+  aiWritten: boolean
 }
