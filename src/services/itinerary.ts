@@ -25,6 +25,8 @@ export interface Itinerary {
 export interface ItineraryDay {
   /** Minutes after midnight the day starts. */
   startMinutes: number
+  /** When the traveler wants to be done, in minutes after midnight; replanning aims for it. */
+  finishBy?: number
   stops: ItineraryStop[]
 }
 
@@ -35,6 +37,8 @@ export interface ItineraryStop {
   fixedStart?: number
   /** The leg arriving here, and the stop it starts from ("start" for the day's starting point). */
   leg: { km: number; minutes: number; estimated: boolean; from: string }
+  /** The traveler has been here; replanning only changes what comes after. */
+  done?: boolean
 }
 
 export interface TimedStop extends ItineraryStop {

@@ -535,3 +535,152 @@
     break-inside: avoid;
   }
 }
+
+/* Replanning: progress, "I'm running late", and the suggestions. */
+.itin-daytimes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.itin-late-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 4px 0 8px;
+}
+
+.itin-late-bar__progress {
+  color: var(--tm-text-2);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.itin-replan {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 4px 0 12px;
+  padding: 16px;
+  border: 1px solid #fed7aa;
+  border-radius: 16px;
+  background: var(--tm-accent-50);
+}
+
+.itin-replan__head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.itin-replan__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  color: #7c2d12;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.itin-replan__lead {
+  margin: 0;
+  color: #7c2d12;
+  font-size: 14px;
+}
+
+.itin-replan__options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.itin-option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.itin-option__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 14px;
+}
+
+.itin-option__text span {
+  color: var(--tm-text-2);
+  font-size: 13px;
+}
+
+.itin-option__fit {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--tm-slate-100);
+  color: var(--tm-text-2);
+  font-size: 12px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.itin-option__fit--ok {
+  background: #d1fae5;
+  color: var(--tm-success-700);
+}
+
+.itin-mini--done {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.itin-mini--done[aria-pressed='true'] {
+  border-color: #a7f3d0;
+  background: #ecfdf5;
+  color: var(--tm-success-700);
+}
+
+.itin-stop--done {
+  opacity: 0.7;
+}
+
+.itin-stop--done .trip-item__name {
+  text-decoration: line-through;
+  text-decoration-color: rgba(15, 23, 42, 0.35);
+}
+
+@media (max-width: 767.98px) {
+  .itin-option {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .itin-option .tm-btn {
+    justify-self: start;
+  }
+
+  .itin-mini__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+}
+
+@media print {
+  .itin-late-bar,
+  .itin-replan {
+    display: none !important;
+  }
+}

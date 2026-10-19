@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import {
+  AlertTriangle,
   CalendarDays,
   CalendarPlus,
   Check,
   ChevronDown,
   Clipboard,
+  Clock,
   Footprints,
   Bus,
   Car,
@@ -16,6 +18,7 @@ import {
   Route,
   Trash2,
   Users,
+  X,
 } from 'lucide-react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 import { PhotoCredit } from '../components/common/PhotoCredit'
@@ -38,6 +41,8 @@ import {
   type TimedStop,
 } from '../services/itinerary'
 import { lastExploredCity } from '../services/lastCity'
+import { localDateTime } from '../services/chatPrefs'
+import { DEFAULT_FINISH_BY, lateness, replanDay } from '../services/replan'
 import { formatCategory } from '../services/recommendationFormat'
 import { formatClock, formatKm } from '../services/routePlanner'
 import { formatMinutes, type TravelMode } from '../services/tripStore'
@@ -129,6 +134,12 @@ function download(filename: string, content: string, type: string) {
 function ItineraryView({ city, itinerary }: { city: City; itinerary: Itinerary }) {
   const [active, setActive] = useState(0)
   const [editing, setEditing] = useState<string | null>(null)
+  /** A delay the traveler reported with "I'm running late", for the open day. */
+  const [manualDelay, setManualDelay] = useState<number | null>(null)
+  const [delayMenuOpen, setDelayMenuOpen] = useState(false)
+  /** Automatic late alerts the traveler closed, by day and delay, so the same alert does not reopen. */
+  const [dismissedLate, setDismissedLate] = useState<string | null>(null)
+  const [cityNow, setCityNow] = useState(() => localDateTime(new Date(), city.ianaTimeZone))
   const [exportOpen, setExportOpen] = useState(false)
   const [toast, setToast] = useState<Toast | null>(null)
   const toastTimer = useRef<number | null>(null)
@@ -204,6 +215,21 @@ function ItineraryView({ city, itinerary }: { city: City; itinerary: Itinerary }
     )
   }
 
+  // The city's local clock, checked every minute, drives the automatic "running late" alert on the day itself.
+  useEffect(() => {
+    const timer = window.setInterval(() => setCityNow(localDateTime(new Date(), city.ianaTimeZone)), 60_000)
+    return () => window.clearInterval(timer)
+  }, [city.ianaTimeZone])
+
+  function setDone(placeId: string, done: boolean) {
+    change((current) => ({
+      ...current,
+      days: current.days.map((d, i) =>
+        i === dayIndex ? { ...d, stops: d.stops.map((s) => (s.place.placeId === placeId ? { ...s, done } : s)) } : d,
+      ),
+    }))
+  }
+
   function setStart(placeId: string, minutes: number | undefined) {
     change((current) => ({
       ...current,
@@ -264,6 +290,22 @@ function ItineraryView({ city, itinerary }: { city: City; itinerary: Itinerary }
     end: timed.at(-1)?.end,
   }
   const anyEstimated = timed.some((s) => s.leg.estimated)
+
+  const date = dayDate(itinerary, dayIndex)
+  const isToday =
+    cityNow.slice(0, 10) ===
+    `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+  const nowMinutes = Number(cityNow.slice(11, 13)) * 60 + Number(cityNow.slice(14, 16))
+  const late = isToday ? lateness(day, nowMinutes) : null
+  const lateKey = late ? `${dayIndex}:${Math.floor(late.delay / 15)}` : null
+  const delay = manualDelay ?? (late && lateKey !== dismissedLate ? late.delay : null)
+  const replan = delay != null ? replanDay(itinerary, dayIndex, delay, formatClock) : null
+  const doneCount = timed.filter((s) => s.done).length
+
+  function closeReplan() {
+    setManualDelay(null)
+    if (lateKey) setDismissedLate(lateKey)
+  }
 
   return (
     <AppLayout active="itinerary">
@@ -447,6 +489,7 @@ function ItineraryView({ city, itinerary }: { city: City; itinerary: Itinerary }
                 <h2 className="itin-panel__title">
                   Day {dayIndex + 1} · {formatDayDate(dayDate(itinerary, dayIndex))}
                 </h2>
+                <div className="itin-daytimes">
                 <label className="itin-daystart">
                   Day starts
                   <input
@@ -463,7 +506,105 @@ function ItineraryView({ city, itinerary }: { city: City; itinerary: Itinerary }
                     }}
                   />
                 </label>
+                <label className="itin-daystart">
+                  Finish by
+                  <input
+                    className="itin-input"
+                    type="time"
+                    value={minutesToInput(day.finishBy ?? DEFAULT_FINISH_BY)}
+                    onChange={(event) => {
+                      const minutes = inputToMinutes(event.target.value)
+                      if (minutes != null)
+                        change((current) => ({
+                          ...current,
+                          days: current.days.map((d, i) => (i === dayIndex ? { ...d, finishBy: minutes } : d)),
+                        }))
+                    }}
+                  />
+                </label>
+                </div>
               </div>
+
+              {timed.length > 0 && !replan && (
+                <div className="itin-late-bar">
+                  <span className="itin-late-bar__progress">
+                    {doneCount} of {timed.length} done
+                    {summary.end != null && summary.end > (day.finishBy ?? DEFAULT_FINISH_BY) &&
+                      ` · ends ${formatClock(summary.end)}, after your finish time`}
+                  </span>
+                  <div className="itin-export">
+                    <button
+                      type="button"
+                      className="tm-btn tm-btn--ghost tm-btn--sm"
+                      aria-expanded={delayMenuOpen}
+                      onClick={() => setDelayMenuOpen((open) => !open)}
+                      disabled={doneCount === timed.length}
+                    >
+                      <Clock size={16} aria-hidden="true" />
+                      I&apos;m running late
+                    </button>
+                    {delayMenuOpen && (
+                      <div className="tm-card itin-menu" role="menu" aria-label="How late">
+                        {[15, 30, 45, 60, 90].map((minutes) => (
+                          <button
+                            key={minutes}
+                            type="button"
+                            role="menuitem"
+                            onClick={() => {
+                              setManualDelay(minutes)
+                              setDelayMenuOpen(false)
+                            }}
+                          >
+                            About {minutes} min
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {replan && (
+                <section className="itin-replan" aria-labelledby="replan-title" role="region">
+                  <div className="itin-replan__head">
+                    <h3 id="replan-title" className="itin-replan__title">
+                      <AlertTriangle size={18} aria-hidden="true" />
+                      {manualDelay != null ? `Running about ${formatMinutes(replan.delay)} late` : `You're running about ${formatMinutes(replan.delay)} late`}
+                    </h3>
+                    <button type="button" className="suggestion-alert__dismiss" aria-label="Close replanning" onClick={closeReplan}>
+                      <X size={16} aria-hidden="true" />
+                    </button>
+                  </div>
+                  <p className="itin-replan__lead">
+                    {replan.shiftedEnd > replan.finishBy
+                      ? `At this pace you'd finish at ${formatClock(replan.shiftedEnd)}, ${formatMinutes(replan.shiftedEnd - replan.finishBy)} after ${formatClock(replan.finishBy)}. Here are some ways to fix it:`
+                      : `You can still finish by ${formatClock(replan.finishBy)}. Shift the rest of the day, or choose another option:`}
+                  </p>
+                  <ul className="itin-replan__options">
+                    {replan.options.map((option) => (
+                      <li key={option.kind} className="itin-option">
+                        <div className="itin-option__text">
+                          <strong>{option.title}</strong>
+                          <span>{option.detail}</span>
+                        </div>
+                        <span className={`itin-option__fit${option.fits ? ' itin-option__fit--ok' : ''}`}>
+                          {option.fits ? `Done by ${formatClock(replan.finishBy)}` : 'Still runs late'}
+                        </span>
+                        <button
+                          type="button"
+                          className="tm-btn tm-btn--primary tm-btn--sm"
+                          onClick={() => {
+                            change(option.apply, `Plan updated: ${option.title}`)
+                            setManualDelay(null)
+                          }}
+                        >
+                          Apply<span className="visually-hidden">: {option.title}</span>
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
 
               {timed.length > 0 ? (
                 <ol className="itin-list">
@@ -491,6 +632,7 @@ function ItineraryView({ city, itinerary }: { city: City; itinerary: Itinerary }
                         onRemove={() => removeStop(stop.place.placeId, stop.place.name)}
                         onMove={(to) => moveStop(stop.place.placeId, to)}
                         onStart={(minutes) => setStart(stop.place.placeId, minutes)}
+                        onDone={(done) => setDone(stop.place.placeId, done)}
                       />
                     </li>
                   ))}
@@ -583,15 +725,16 @@ interface StopCardProps {
   onRemove: () => void
   onMove: (day: number) => void
   onStart: (minutes: number | undefined) => void
+  onDone: (done: boolean) => void
 }
 
-function StopCard({ city, stop, days, dayIndex, editing, onEdit, onRemove, onMove, onStart }: StopCardProps) {
+function StopCard({ city, stop, days, dayIndex, editing, onEdit, onRemove, onMove, onStart, onDone }: StopCardProps) {
   const { ref, photo } = usePlacePhoto<HTMLSpanElement>(stop.place.placeId)
   const tone = primaryCategory(stop.place.category).tone
   const name = stop.place.name
 
   return (
-    <article className="tm-card itin-stop">
+    <article className={`tm-card itin-stop${stop.done ? ' itin-stop--done' : ''}`}>
       <div className="itin-stop__time" aria-hidden="true">
         {formatClock(stop.begin)}
       </div>
@@ -610,6 +753,16 @@ function StopCard({ city, stop, days, dayIndex, editing, onEdit, onRemove, onMov
             {stop.place.category && <span className="trip-item__category">{formatCategory(stop.place.category)}</span>}
           </div>
           <span className="trip-item__controls">
+            <button
+              type="button"
+              className="itin-mini itin-mini--done"
+              aria-pressed={Boolean(stop.done)}
+              aria-label={stop.done ? `${name} done, undo` : `Mark ${name} done`}
+              onClick={() => onDone(!stop.done)}
+            >
+              <Check size={16} aria-hidden="true" />
+              <span className="itin-mini__label">{stop.done ? 'Done' : 'Done?'}</span>
+            </button>
             <button
               type="button"
               className="itin-mini"

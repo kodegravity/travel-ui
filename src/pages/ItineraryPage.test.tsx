@@ -181,4 +181,50 @@ describe('ItineraryPage', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Copy as text' }))
     expect(writeText).toHaveBeenCalledWith(expect.stringContaining('9:15 AM–10:45 AM  Royal Palace'))
   })
+
+  it('marks stops done and counts progress', async () => {
+    seed()
+    const user = renderPage()
+
+    await user.click(screen.getByRole('button', { name: 'Mark Royal Palace done' }))
+
+    expect(screen.getByText(/1 of 3 done/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Royal Palace done, undo' })).toHaveAttribute('aria-pressed', 'true')
+    expect(saved().days[0].stops[0].done).toBe(true)
+  })
+
+  it('replans a late day: shows the overrun and applies a fix, with undo', async () => {
+    seed()
+    const user = renderPage()
+    // The plan ends at 2:19 PM; finishing by 2:00 PM means a delay must be absorbed.
+    fireEvent.change(screen.getByLabelText('Finish by'), { target: { value: '14:00' } })
+    await user.click(screen.getByRole('button', { name: 'Mark Royal Palace done' }))
+
+    await user.click(screen.getByRole('button', { name: /running late/ }))
+    await user.click(screen.getByRole('menuitem', { name: 'About 30 min' }))
+
+    const panel = screen.getByRole('region', { name: /Running about 30 min late/ })
+    expect(within(panel).getByText(/you'd finish at 2:49 PM, 49 min after 2:00 PM/)).toBeInTheDocument()
+    const skip = within(panel).getByRole('button', { name: 'Apply: Skip El Retiro Park' })
+    await user.click(skip)
+
+    expect(stopNames()).toEqual(['Royal Palace', 'Prado Museum'])
+    expect(screen.queryByRole('region', { name: /late/ })).not.toBeInTheDocument()
+    expect(screen.getByRole('status')).toHaveTextContent('Plan updated: Skip El Retiro Park')
+    await user.click(screen.getByRole('button', { name: 'Undo' }))
+    expect(stopNames()).toEqual(['Royal Palace', 'Prado Museum', 'El Retiro Park'])
+  })
+
+  it('notices on the day itself when the traveler is running late', () => {
+    // 2:00 PM in Madrid on the day of the trip; Prado should have ended at 1:10 PM and is not marked done.
+    vi.useFakeTimers({ toFake: ['Date'] })
+    vi.setSystemTime(new Date('2026-11-14T13:00:00Z'))
+    seed()
+    saveItinerary({ ...saved(), days: [{ ...saved().days[0], stops: saved().days[0].stops.map((s: object, i: number) => (i === 0 ? { ...s, done: true } : s)) }] })
+    renderPage()
+
+    expect(screen.getByRole('region', { name: /You're running about 50 min late/ })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Apply: Shift the rest by 50 min/ })).toBeInTheDocument()
+    vi.useRealTimers()
+  })
 })
