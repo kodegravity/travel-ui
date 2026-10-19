@@ -227,4 +227,33 @@ describe('ItineraryPage', () => {
     expect(screen.getByRole('button', { name: /Apply: Shift the rest by 50 min/ })).toBeInTheDocument()
     vi.useRealTimers()
   })
+
+  it('suggests detours along a leg and adds one between the stops', async () => {
+    seed()
+    const page = {
+      recommendations: [
+        { placeId: 'mayor', name: 'Plaza Mayor', category: 'HISTORY', description: '', latitude: 40.4155, longitude: -3.7074, estimatedDurationMinutes: 30 },
+        { placeId: 'debod', name: 'Temple of Debod', category: 'HISTORY', description: '', latitude: 40.424, longitude: -3.7178 },
+      ],
+      page: 0, size: 20, totalElements: 2, totalPages: 1,
+    }
+    const fetchMock = vi.fn(async () => new Response(JSON.stringify(page), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+    vi.stubGlobal('fetch', fetchMock)
+    const user = renderPage()
+
+    // Royal Palace → Prado Museum passes Plaza Mayor; the Temple of Debod is the other way.
+    await user.click(screen.getByRole('button', { name: /Detours on the way to Prado Museum/ }))
+    const panel = await screen.findByRole('region', { name: 'Detours on the way to Prado Museum' })
+    expect(await within(panel).findByText('Plaza Mayor')).toBeInTheDocument()
+    expect(within(panel).queryByText('Temple of Debod')).not.toBeInTheDocument()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+
+    await user.click(within(panel).getByRole('button', { name: /Add Plaza Mayor before Prado Museum/ }))
+
+    expect(stopNames()).toEqual(['Royal Palace', 'Plaza Mayor', 'Prado Museum', 'El Retiro Park'])
+    expect(saved().days[0].stops[1].leg).toMatchObject({ from: 'palace', estimated: true })
+    expect(saved().days[0].stops[2].leg).toMatchObject({ from: 'mayor', estimated: true })
+    expect(JSON.parse(window.localStorage.getItem('roam.trip.v1')!).trips.madrid.map((p: SavedPlace) => p.placeId)).toContain('mayor')
+    vi.unstubAllGlobals()
+  })
 })

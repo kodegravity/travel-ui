@@ -16,6 +16,7 @@ import {
   Plus,
   Printer,
   Route,
+  Sparkles,
   Trash2,
   Users,
   X,
@@ -25,7 +26,7 @@ import { PhotoCredit } from '../components/common/PhotoCredit'
 import { AppLayout } from '../components/layout/AppLayout'
 import { TripSteps } from '../components/trip/TripSteps'
 import { primaryCategory } from '../data/categories'
-import { findCity, type City } from '../data/destinations'
+import { findCity, findCountry, type City } from '../data/destinations'
 import { usePlacePhoto } from '../hooks/usePlacePhoto'
 import {
   dayDate,
@@ -45,7 +46,9 @@ import { localDateTime } from '../services/chatPrefs'
 import { DEFAULT_FINISH_BY, lateness, replanDay } from '../services/replan'
 import { formatCategory } from '../services/recommendationFormat'
 import { formatClock, formatKm } from '../services/routePlanner'
-import { formatMinutes, type TravelMode } from '../services/tripStore'
+import { findDetours, type Detour } from '../services/detours'
+import { describeTravelApiError } from '../services/travelApi'
+import { formatMinutes, toSavedPlace, toggleTripPlace, useTripStore, type TravelMode } from '../services/tripStore'
 
 const TOAST_MS = 4000
 const MAX_TRAVELERS = 12
@@ -134,6 +137,9 @@ function download(filename: string, content: string, type: string) {
 function ItineraryView({ city, itinerary }: { city: City; itinerary: Itinerary }) {
   const [active, setActive] = useState(0)
   const [editing, setEditing] = useState<string | null>(null)
+  /** The leg whose detours are open, as "day:stop". */
+  const [detourLeg, setDetourLeg] = useState<string | null>(null)
+  const tripStore = useTripStore()
   /** A delay the traveler reported with "I'm running late", for the open day. */
   const [manualDelay, setManualDelay] = useState<number | null>(null)
   const [delayMenuOpen, setDelayMenuOpen] = useState(false)
@@ -187,6 +193,36 @@ function ItineraryView({ city, itinerary }: { city: City; itinerary: Itinerary }
       return { ...next, days: next.days.map((d) => relinkDay(d, next.start, next.mode)) }
     })
     if (message) flash({ message, undo: before })
+  }
+
+  /** Puts a detour between the previous stop and stop {@code index}, and keeps it in the trip so re-optimizing keeps it. */
+  function addDetour(index: number, detour: Detour) {
+    const place = toSavedPlace(city.id, detour.place)
+    change(
+      (current) => ({
+        ...current,
+        days: current.days.map((d, i) =>
+          i === dayIndex
+            ? {
+                ...d,
+                stops: [
+                  ...d.stops.slice(0, index),
+                  {
+                    place,
+                    visitMinutes: detour.place.estimatedDurationMinutes ?? 45,
+                    // An empty "from" makes the leg get re-estimated from its real neighbour.
+                    leg: { km: 0, minutes: 0, estimated: true, from: '' },
+                  },
+                  ...d.stops.slice(index),
+                ],
+              }
+            : d,
+        ),
+      }),
+      `${detour.place.name} added`,
+    )
+    if (!(tripStore.trips[city.id] ?? []).some((p) => p.placeId === place.placeId)) toggleTripPlace(place)
+    setDetourLeg(null)
   }
 
   function removeStop(placeId: string, name: string) {
@@ -621,7 +657,29 @@ function ItineraryView({ city, itinerary }: { city: City; itinerary: Itinerary }
                             from {i === 0 ? itinerary.startName : timed[i - 1]!.place.name}
                           </span>
                         </span>
+                        <button
+                          type="button"
+                          className="itin-detour-btn"
+                          aria-expanded={detourLeg === `${dayIndex}:${i}`}
+                          aria-label={`Detours on the way to ${stop.place.name}`}
+                          onClick={() => setDetourLeg((open) => (open === `${dayIndex}:${i}` ? null : `${dayIndex}:${i}`))}
+                        >
+                          <Sparkles size={13} aria-hidden="true" />
+                          Detours
+                        </button>
                       </div>
+                      {detourLeg === `${dayIndex}:${i}` && (
+                        <DetourPanel
+                          from={i === 0 ? itinerary.start : timed[i - 1]!.place}
+                          to={stop.place}
+                          mode={itinerary.mode}
+                          currency={findCountry(city.country)?.currency ?? 'EUR'}
+                          planned={new Set(itinerary.days.flatMap((d) => d.stops.map((s) => s.place.placeId)))}
+                          cityId={city.id}
+                          toName={stop.place.name}
+                          onAdd={(detour) => addDetour(i, detour)}
+                        />
+                      )}
                       <StopCard
                         city={city}
                         stop={stop}
@@ -828,5 +886,93 @@ function StopCard({ city, stop, days, dayIndex, editing, onEdit, onRemove, onMov
         )}
       </div>
     </article>
+  )
+}
+
+interface DetourPanelProps {
+  from: { latitude: number; longitude: number }
+  to: { latitude: number; longitude: number }
+  mode: TravelMode
+  currency: string
+  planned: ReadonlySet<string>
+  cityId: string
+  toName: string
+  onAdd: (detour: Detour) => void
+}
+
+type DetourState = { status: 'loading' } | { status: 'ready'; detours: Detour[] } | { status: 'error'; message: string }
+
+/** Places a few minutes off this leg. One capped search when opened; reopening within minutes reuses it. */
+function DetourPanel({ from, to, mode, currency, planned, cityId, toName, onAdd }: DetourPanelProps) {
+  const [state, setState] = useState<DetourState>({ status: 'loading' })
+  const [attempt, setAttempt] = useState(0)
+
+  useEffect(() => {
+    let active = true
+    findDetours(from, to, mode, currency, planned)
+      .then((detours) => active && setState({ status: 'ready', detours }))
+      .catch((error: unknown) => active && setState({ status: 'error', message: describeTravelApiError(error) }))
+    return () => {
+      active = false
+    }
+    // The leg's ends and the attempt identify the search; the planned set only filters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [from.latitude, from.longitude, to.latitude, to.longitude, mode, attempt])
+
+  return (
+    <div className="itin-detours" role="region" aria-label={`Detours on the way to ${toName}`}>
+      {state.status === 'loading' && <p className="trip-field__hint">Looking along the way…</p>}
+      {state.status === 'error' && (
+        <p className="trip-field__hint">
+          {state.message}{' '}
+          <button
+            type="button"
+            className="link-button"
+            onClick={() => {
+              setState({ status: 'loading' })
+              setAttempt((n) => n + 1)
+            }}
+          >
+            Try again
+          </button>
+        </p>
+      )}
+      {state.status === 'ready' && state.detours.length === 0 && (
+        <p className="trip-field__hint">Nothing worth it within a few minutes of this route.</p>
+      )}
+      {state.status === 'ready' && state.detours.length > 0 && (
+        <ul className="itin-detours__list">
+          {state.detours.map((detour) => (
+            <li key={detour.place.placeId} className="itin-detour">
+              <span
+                className="itin-detour__tile tone-tile"
+                style={{ backgroundColor: primaryCategory(detour.place.category).tone }}
+                aria-hidden="true"
+              />
+              <span className="itin-detour__text">
+                <Link to={`/places/${cityId}/${encodeURIComponent(detour.place.placeId)}`}>{detour.place.name}</Link>
+                <span>
+                  {formatCategory(detour.place.category)}
+                  {detour.place.estimatedDurationMinutes != null &&
+                    ` · visit ≈ ${formatMinutes(detour.place.estimatedDurationMinutes)}`}
+                </span>
+              </span>
+              <span className="itin-detour__extra">
+                {detour.extraMinutes === 0 ? 'On the way' : `+${formatMinutes(detour.extraMinutes)}`}
+              </span>
+              <button
+                type="button"
+                className="tm-btn tm-btn--primary tm-btn--sm"
+                aria-label={`Add ${detour.place.name} before ${toName}`}
+                onClick={() => onAdd(detour)}
+              >
+                <Plus size={16} aria-hidden="true" />
+                Add
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </div>
   )
 }
