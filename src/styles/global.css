@@ -403,6 +403,48 @@ svg {
   width: 100%;
 }
 
+.suggestion-alert {
+  position: sticky;
+  top: var(--space-4);
+  z-index: 2;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface, #fff);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+.suggestion-alert__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.suggestion-alert__eyebrow,
+.suggestion-alert__meta {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.suggestion-alert__title {
+  margin: var(--space-1) 0;
+  font-weight: 600;
+}
+
+.suggestion-alert__dismiss {
+  flex: none;
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+
 /* Travel mode */
 .travel-mode {
   display: grid;

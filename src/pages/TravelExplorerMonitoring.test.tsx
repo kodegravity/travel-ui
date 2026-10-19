@@ -132,6 +132,29 @@ describe('Travel session monitoring', () => {
     expect(screen.getByRole('heading', { name: 'Colosseum Walk' })).toBeInTheDocument()
   })
 
+  it('alerts once for a newly found place and dismisses it without re-alerting the same place', async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
+    mockGeolocation()
+    mockBackend([
+      () => recommendationsResponse('UPDATED', [placeA]),
+      () => recommendationsResponse('UPDATED', [placeA, placeB]),
+      () => recommendationsResponse('UNCHANGED', []),
+    ])
+    render(<TravelExplorerPage />)
+    await startSession(user)
+    expect(screen.queryByText('New nearby suggestion')).not.toBeInTheDocument()
+
+    await advance(AUTO_REFRESH_INTERVAL_MS)
+    const alert = await screen.findByText('New nearby suggestion')
+    expect(alert.closest('[role="status"]')).toHaveTextContent('Trastevere Studio')
+
+    await user.click(screen.getByRole('button', { name: 'Dismiss suggestion' }))
+    expect(screen.queryByText('New nearby suggestion')).not.toBeInTheDocument()
+
+    await advance(AUTO_REFRESH_INTERVAL_MS)
+    expect(screen.queryByText('New nearby suggestion')).not.toBeInTheDocument()
+  })
+
   it('does not refresh automatically while the tab is hidden', async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime })
     mockGeolocation()

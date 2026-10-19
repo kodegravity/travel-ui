@@ -7,6 +7,7 @@ import { RecommendationCard } from '../components/traveler/RecommendationCard'
 import { RecommendationResults } from '../components/traveler/RecommendationResults'
 import { SearchResults } from '../components/traveler/SearchResults'
 import { TravelModeCard } from '../components/traveler/TravelModeCard'
+import { SuggestionAlert } from '../components/traveler/SuggestionAlert'
 import { TravelPreferencesForm } from '../components/traveler/TravelPreferencesForm'
 import { useMediaQuery } from '../hooks/useMediaQuery'
 import { useNearbySearch, type SearchTarget } from '../hooks/useNearbySearch'
@@ -172,6 +173,8 @@ export function TravelExplorerPage() {
             onStop={() => void session.stop()}
             onEnableNotifications={() => void handleEnableNotifications()}
           />
+
+          <SuggestionAlert suggestion={state.liveSuggestion} onDismiss={session.dismissSuggestion} />
 
           <div className="results-toolbar" ref={toolbarRef}>
             <div className="results-tabs" role="tablist" aria-label="Results">
