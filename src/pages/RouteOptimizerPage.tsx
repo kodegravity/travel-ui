@@ -4,7 +4,6 @@ import {
   ArrowLeft,
   Bus,
   Car,
-  Check,
   CircleCheck,
   Flag,
   Footprints,
@@ -12,13 +11,14 @@ import {
   RefreshCw,
   Save,
 } from 'lucide-react'
-import { Link, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import type { MapPlace } from '../components/explorer/PlacesMap'
 import { AppLayout } from '../components/layout/AppLayout'
 import { TripSteps } from '../components/trip/TripSteps'
 import { findCity, type City } from '../data/destinations'
 import { deviceLocation, rememberDeviceLocation } from '../services/deviceLocation'
 import { describeLocationError, getCurrentLocation, LocationError } from '../services/geolocation'
+import { itineraryFromSchedule, saveItinerary, useItineraries } from '../services/itinerary'
 import { formatCategory } from '../services/recommendationFormat'
 import {
   buildSchedule,
@@ -40,8 +40,6 @@ import {
 import type { LocationRequest } from '../types/api'
 
 const PlacesMap = lazy(() => import('../components/explorer/PlacesMap'))
-
-const TOAST_MS = 4000
 
 const MODES: { id: TravelMode; label: string; icon: typeof Footprints }[] = [
   { id: 'walk', label: 'Walking', icon: Footprints },
@@ -74,6 +72,8 @@ type RouteState = { key: string; route: PlannedRoute }
 
 function RouteOptimizer({ city }: { city: City }) {
   const store = useTripStore()
+  const navigate = useNavigate()
+  const saved = useItineraries()[city.id]
   const places = useMemo(() => store.trips[city.id] ?? [], [store.trips, city.id])
   const settings = tripSettings(city.id, store)
   const [device, setDevice] = useState<LocationRequest | null>(deviceLocation)
@@ -83,7 +83,6 @@ function RouteOptimizer({ city }: { city: City }) {
   const [attempt, setAttempt] = useState(0)
   const [split, setSplit] = useState(false)
   const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [toast, setToast] = useState<string | null>(null)
 
   const usesDevice = settings.start === 'current' && device !== null
   const start: LocationRequest = usesDevice ? device : city.location
@@ -103,12 +102,6 @@ function RouteOptimizer({ city }: { city: City }) {
     // requestKey captures the places, start, mode, and recalculation attempt.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [requestKey])
-
-  useEffect(() => {
-    if (!toast) return
-    const timer = window.setTimeout(() => setToast(null), TOAST_MS)
-    return () => window.clearTimeout(timer)
-  }, [toast])
 
   async function requestLocation() {
     setLocating(true)
@@ -144,10 +137,23 @@ function RouteOptimizer({ city }: { city: City }) {
     [route, settings.mode, split, start.latitude, start.longitude],
   )
 
+  /** Applies the order to the trip and saves the schedule as the itinerary, keeping its dates and travelers. */
   function save() {
-    if (!route) return
+    if (!route || !schedule) return
     setTripPlaces(city.id, route.stops)
-    setToast('Saved. Your trip now follows this order.')
+    saveItinerary(
+      itineraryFromSchedule({
+        cityId: city.id,
+        schedule,
+        mode: settings.mode,
+        // Never store a device location: re-estimates start from the centre instead.
+        start: city.location,
+        startName,
+        source: route.source,
+        ...(saved ? { startDate: saved.startDate, travelers: saved.travelers } : {}),
+      }),
+    )
+    navigate(`/trip/${city.id}/itinerary`)
   }
 
   if (places.length < 2) {
@@ -474,14 +480,6 @@ function RouteOptimizer({ city }: { city: City }) {
 
         {actions('trip-bar route-bar-mobile')}
 
-        {toast && (
-          <div className="tm-toast" role="status">
-            <span className="tm-toast__icon" aria-hidden="true">
-              <Check size={14} strokeWidth={3} />
-            </span>
-            {toast}
-          </div>
-        )}
       </div>
     </AppLayout>
   )

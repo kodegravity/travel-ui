@@ -8,7 +8,7 @@ import { findCity } from '../../data/destinations'
 import { lastExploredCity } from '../../services/lastCity'
 import { useTripStore } from '../../services/tripStore'
 
-export type NavKey = 'home' | 'explore' | 'travel-mode' | 'trip'
+export type NavKey = 'home' | 'explore' | 'travel-mode' | 'trip' | 'itinerary'
 
 interface NavAnchorProps {
   to: string
@@ -117,6 +117,15 @@ export function Header({ active }: { active?: NavKey }) {
           >
             Travel Mode
           </NavAnchor>
+          {authenticated && (
+            <NavAnchor
+              to="/itinerary"
+              className={`tm-nav-link${active === 'itinerary' ? ' tm-nav-link--on' : ''}`}
+              current={active === 'itinerary'}
+            >
+              My Trips
+            </NavAnchor>
+          )}
 
           {authenticated && (
             <div className="tm-menu" ref={favRef}>
@@ -218,6 +227,11 @@ export function Header({ active }: { active?: NavKey }) {
           <NavAnchor to="/travel-mode" className="tm-drawer__link" current={active === 'travel-mode'}>
             Travel Mode
           </NavAnchor>
+          {authenticated && (
+            <NavAnchor to="/itinerary" className="tm-drawer__link" current={active === 'itinerary'}>
+              My Trips
+            </NavAnchor>
+          )}
           {authenticated && (
             <NavAnchor to="/trip" className="tm-drawer__link" current={active === 'trip'}>
               My Trip · {tripCount}

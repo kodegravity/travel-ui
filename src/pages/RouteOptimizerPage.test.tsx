@@ -3,6 +3,7 @@ import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { RouteOptimizerPage } from './RouteOptimizerPage'
+import { resetItineraries } from '../services/itinerary'
 import { resetTripStore, toggleTripPlace, type SavedPlace } from '../services/tripStore'
 
 function stop(id: string, name: string, latitude: number, longitude: number, minutes: number): SavedPlace {
@@ -42,6 +43,7 @@ function renderRoute() {
       <Routes>
         <Route path="/trip/:cityId/route" element={<RouteOptimizerPage />} />
         <Route path="/trip/:cityId" element={<p>Trip builder</p>} />
+        <Route path="/trip/:cityId/itinerary" element={<p>Itinerary page</p>} />
         <Route path="/explore/:cityId" element={<p>Explore page</p>} />
       </Routes>
     </MemoryRouter>,
@@ -58,6 +60,7 @@ function timelineNames() {
 beforeEach(() => {
   window.localStorage.clear()
   resetTripStore()
+  resetItineraries()
   ;[RETIRO, PALACE, PRADO].forEach((place) => toggleTripPlace(place))
 })
 
@@ -112,7 +115,7 @@ describe('RouteOptimizerPage', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
   })
 
-  it('saves the optimized order to the trip', async () => {
+  it('saves the order to the trip and the schedule as the itinerary, then opens it', async () => {
     mockBackend()
     const user = renderRoute()
     await screen.findByText('Street routes by Google')
@@ -121,7 +124,11 @@ describe('RouteOptimizerPage', () => {
 
     const saved = JSON.parse(window.localStorage.getItem('roam.trip.v1')!).trips.madrid.map((p: SavedPlace) => p.placeId)
     expect(saved).toEqual(['palace', 'prado', 'retiro'])
-    expect(screen.getByText('Saved. Your trip now follows this order.')).toBeInTheDocument()
+    const itinerary = JSON.parse(window.localStorage.getItem('roam.itinerary.v1')!).madrid
+    expect(itinerary.days).toHaveLength(1)
+    expect(itinerary.days[0].stops.map((s: { place: SavedPlace }) => s.place.placeId)).toEqual(['palace', 'prado', 'retiro'])
+    expect(itinerary.source).toBe('google')
+    expect(screen.getByText('Itinerary page')).toBeInTheDocument()
   })
 
   it('suggests splitting a long day and splits it', async () => {
