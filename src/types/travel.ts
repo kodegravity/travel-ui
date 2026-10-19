@@ -9,7 +9,7 @@ export const INTERESTS = [
 
 export type Interest = (typeof INTERESTS)[number]
 
-export const CURRENCIES = ['EUR', 'USD', 'CAD', 'GBP', 'JPY'] as const
+export const CURRENCIES = ['EUR', 'USD', 'CAD', 'GBP', 'JPY', 'INR'] as const
 
 export type Currency = (typeof CURRENCIES)[number]
 

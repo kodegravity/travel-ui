@@ -8,6 +8,8 @@ export interface City {
   location: LocationRequest
   /** Short time-zone label for the banner, such as CET or ET. */
   timeZone: string
+  /** IANA time zone, such as Europe/Madrid, for calendar files and local times. */
+  ianaTimeZone: string
   /** Main local language, when it differs by city (Montréal, Québec City). */
   language?: string
 }
@@ -20,6 +22,30 @@ export interface Country {
   cities: City[]
 }
 
+/** The IANA zone for each country and banner label; one entry covers a country that has a single zone. */
+const IANA_ZONES: Record<string, string> = {
+  Spain: 'Europe/Madrid',
+  France: 'Europe/Paris',
+  Italy: 'Europe/Rome',
+  'United Kingdom': 'Europe/London',
+  Japan: 'Asia/Tokyo',
+  India: 'Asia/Kolkata',
+  'Canada|ET': 'America/Toronto',
+  'Canada|PT': 'America/Vancouver',
+  'Canada|MT': 'America/Edmonton',
+  'Canada|AT': 'America/Halifax',
+  'United States|ET': 'America/New_York',
+  'United States|CT': 'America/Chicago',
+  'United States|MT': 'America/Denver',
+  'United States|PT': 'America/Los_Angeles',
+}
+
+function ianaZone(country: string, label: string): string {
+  const zone = IANA_ZONES[`${country}|${label}`] ?? IANA_ZONES[country]
+  if (!zone) throw new Error(`No IANA time zone for ${country} (${label})`)
+  return zone
+}
+
 function city(name: string, country: string, latitude: number, longitude: number, timeZone: string, language?: string): City {
   const id = name
     .normalize('NFD')
@@ -27,7 +53,15 @@ function city(name: string, country: string, latitude: number, longitude: number
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/(^-|-$)/g, '')
-  return { id, name, country, location: { latitude, longitude }, timeZone, ...(language ? { language } : {}) }
+  return {
+    id,
+    name,
+    country,
+    location: { latitude, longitude },
+    timeZone,
+    ianaTimeZone: ianaZone(country, timeZone),
+    ...(language ? { language } : {}),
+  }
 }
 
 export const COUNTRIES: readonly Country[] = [
@@ -101,6 +135,21 @@ export const COUNTRIES: readonly Country[] = [
       city('Osaka', 'Japan', 34.6937, 135.5023, 'JST'),
       city('Sapporo', 'Japan', 43.0618, 141.3545, 'JST'),
       city('Hiroshima', 'Japan', 34.3853, 132.4553, 'JST'),
+    ],
+  },
+  {
+    name: 'India',
+    currency: 'INR',
+    language: 'Hindi',
+    cities: [
+      city('New Delhi', 'India', 28.6139, 77.209, 'IST'),
+      city('Chandigarh', 'India', 30.7333, 76.7794, 'IST', 'Punjabi'),
+      city('Mohali', 'India', 30.7046, 76.7179, 'IST', 'Punjabi'),
+      city('Jammu', 'India', 32.7266, 74.857, 'IST', 'Dogri'),
+      city('Amritsar', 'India', 31.634, 74.8723, 'IST', 'Punjabi'),
+      city('Agra', 'India', 27.1767, 78.0081, 'IST'),
+      city('Jaipur', 'India', 26.9124, 75.7873, 'IST', 'Hindi'),
+      city('Mumbai', 'India', 19.076, 72.8777, 'IST', 'Marathi'),
     ],
   },
   {

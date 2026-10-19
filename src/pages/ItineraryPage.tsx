@@ -238,7 +238,7 @@ function ItineraryView({ city, itinerary }: { city: City; itinerary: Itinerary }
 
   function exportCalendar() {
     setExportOpen(false)
-    download(`${city.id}-itinerary.ics`, toIcs(itinerary, city.name, city.timeZone), 'text/calendar;charset=utf-8')
+    download(`${city.id}-itinerary.ics`, toIcs(itinerary, city.name, city.ianaTimeZone), 'text/calendar;charset=utf-8')
     flash({ message: 'Calendar file downloaded' })
   }
 

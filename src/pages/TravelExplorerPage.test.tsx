@@ -165,7 +165,7 @@ describe('TravelExplorerPage', () => {
     expect(screen.queryByRole('status')).not.toBeInTheDocument()
   })
 
-  it('offers EUR, USD, CAD, GBP, and JPY currencies and updates the selection', async () => {
+  it('offers EUR, USD, CAD, GBP, JPY, and INR currencies and updates the selection', async () => {
     const user = renderPage()
     const currency = screen.getByLabelText('Currency')
 
@@ -175,6 +175,7 @@ describe('TravelExplorerPage', () => {
       'CAD',
       'GBP',
       'JPY',
+      'INR',
     ])
     expect(currency).toHaveValue('EUR')
 
