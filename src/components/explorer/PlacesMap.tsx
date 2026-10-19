@@ -152,7 +152,7 @@ export default function PlacesMap({ places, center, selectedId, onSelect, visibl
         zIndex: place.id === selectedId ? 1000 : place.number,
         gmpClickable: true,
       })
-      marker.addListener('gmp-click', () => onSelectRef.current(place.id))
+      marker.addEventListener('gmp-click', () => onSelectRef.current(place.id))
       current.markers.push(marker)
       bounds.extend(latLng(place))
     }
@@ -202,9 +202,11 @@ export default function PlacesMap({ places, center, selectedId, onSelect, visibl
     )
   }
 
+  // Google owns everything inside the map element, so React must not render children there.
   return (
-    <div className="places-map" ref={container} aria-label="Map">
-      {status === 'loading' && <span className="places-map__note">Loading map…</span>}
+    <div className="places-map places-map--google" aria-label="Map">
+      <div className="places-map__canvas" ref={container} />
+      {status === 'loading' && <span className="places-map__note places-map__note--overlay">Loading map…</span>}
     </div>
   )
 }

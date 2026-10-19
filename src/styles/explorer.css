@@ -347,6 +347,25 @@
   font-weight: 600;
 }
 
+.places-map--google {
+  position: relative;
+}
+
+.places-map__canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.places-map__note--overlay {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  max-width: none;
+  color: var(--color-text-muted);
+  font-weight: 600;
+}
+
 .places-map__note {
   max-width: 32ch;
   padding: 0 16px;
