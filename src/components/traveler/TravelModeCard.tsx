@@ -85,7 +85,7 @@ export function TravelModeCard({
           )}
           {notificationStatus === 'granted' && (
             <p className="field-hint">
-              Alerts are on. Live events can reach you even with this tab in the background, while it stays open.
+              Alerts are on. New places and live events can reach you even with this tab in the background, while it stays open.
             </p>
           )}
           {notificationStatus === 'denied' && (

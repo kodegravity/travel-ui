@@ -403,10 +403,13 @@ svg {
   width: 100%;
 }
 
+/* Phones: pinned to the bottom of the screen so it shows wherever the traveler has scrolled. */
 .suggestion-alert {
-  position: sticky;
-  top: var(--space-4);
-  z-index: 2;
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--space-4) + env(safe-area-inset-bottom, 0px));
+  left: var(--space-4);
+  z-index: 20;
   display: flex;
   align-items: flex-start;
   gap: var(--space-3);
@@ -414,6 +417,17 @@ svg {
   border-radius: var(--radius-md, 8px);
   background: var(--color-surface, #fff);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+}
+
+@media (min-width: 768px) {
+  .suggestion-alert {
+    position: sticky;
+    top: var(--space-4);
+    right: auto;
+    bottom: auto;
+    left: auto;
+    z-index: 2;
+  }
 }
 
 .suggestion-alert__body {

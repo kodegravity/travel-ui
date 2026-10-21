@@ -23,7 +23,7 @@ import type {
   TravelSessionRecommendationResponse,
 } from '../types/api'
 import type { TravelerPreferences } from '../types/travel'
-import { notifyLiveEvents } from '../services/notifications'
+import { notifyLiveEvents, notifyNewPlaces } from '../services/notifications'
 
 export type TravelSessionPhase =
   | 'IDLE'
@@ -193,9 +193,9 @@ function reducer(state: TravelSessionState, action: TravelSessionAction): Travel
         errorMessage: null,
         failedAction: null,
         newRecommendationIds: newPlaces.map((item) => item.placeId),
-        // Keep one unobtrusive suggestion, not a queue that bursts after dismissal.
+        // Keep one unobtrusive suggestion, not a queue that bursts after dismissal; the newest place replaces it.
         liveSuggestion: state.liveSuggestionsEnabled
-          ? state.liveSuggestion ?? newPlaces[0] ?? null
+          ? newPlaces[0] ?? state.liveSuggestion
           : null,
         liveEvents: [...freshEvents, ...state.liveEvents].slice(0, MAX_LIVE_EVENTS),
         newLiveEventIds: freshEvents.map((item) => item.event.id),
@@ -274,13 +274,16 @@ export function useTravelSession(
   const monitoringStoppedRef = useRef(false)
   const stoppingRef = useRef(false)
   const eventTypesRef = useRef<readonly EventType[]>(eventTypes)
-  const backgroundRef = useRef(backgroundAlerts && eventTypes.length > 0)
+  const backgroundRef = useRef(backgroundAlerts)
+  /** Places already on screen, so a refresh can tell which ones are new for the system notification. */
+  const shownPlaceIdsRef = useRef<Set<string>>(new Set())
   /** Events already shown in this session; sent with each check so the backend skips them. Memory only. */
   const seenEventIdsRef = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     eventTypesRef.current = eventTypes
-    backgroundRef.current = backgroundAlerts && eventTypes.length > 0
+    backgroundRef.current = backgroundAlerts
+    shownPlaceIdsRef.current = new Set(state.recommendations.map((item) => item.placeId))
   })
 
   useEffect(() => {
@@ -342,7 +345,7 @@ export function useTravelSession(
 
     const onVisibilityChange = () => {
       if (document.hidden) {
-        // With background alerts on, keep watching so a live event can still arrive as a notification.
+        // With background alerts on, keep watching so new places and live events can still arrive as notifications.
         if (backgroundRef.current) return
         stopWatchingNow()
         abortAutoRefresh()
@@ -451,7 +454,11 @@ export function useTravelSession(
     lastSuccessAtRef.current = Date.now()
     const fresh = (response.liveSuggestions ?? []).filter((item) => !seenEventIdsRef.current.has(item.event.id))
     fresh.forEach((item) => seenEventIdsRef.current.add(item.event.id))
+    const newPlaces = !initial && response.refreshStatus === 'UPDATED' && liveEnabledRef.current
+      ? response.recommendations.filter((item) => !shownPlaceIdsRef.current.has(item.placeId))
+      : []
     dispatch({ type: 'RECOMMENDATIONS_RECEIVED', response, initial })
+    void notifyNewPlaces(newPlaces)
     void notifyLiveEvents(fresh)
   }
 

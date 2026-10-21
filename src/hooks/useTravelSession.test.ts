@@ -125,6 +125,18 @@ describe('proactive foreground exploration', () => {
     expect(result.current.state.newRecommendationIds).toEqual(['second'])
   })
 
+  it('replaces the on-screen suggestion with the newest place', async () => {
+    const { result } = await start()
+    responses.push(() => recommendations('UPDATED', [second]), () => recommendations('UPDATED', [third]))
+    await move()
+    await advance(LIVE_REFRESH_THROTTLE_MS)
+    expect(result.current.state.liveSuggestion).toEqual(second)
+
+    await move(rome)
+    await advance(LIVE_REFRESH_THROTTLE_MS)
+    expect(result.current.state.liveSuggestion).toEqual(third)
+  })
+
   it('ignores GPS jitter and rejects inaccurate fixes without sending them', async () => {
     const { result } = await start()
     await move({ latitude: 41.89021, longitude: 12.49221 })
@@ -366,5 +378,45 @@ describe('live event alerts', () => {
     await advance(LIVE_REFRESH_THROTTLE_MS)
 
     expect(shown).toEqual(['Derby night nearby'])
+  })
+
+  it('notifies new places from a background tab without any event types', async () => {
+    const shown: Array<{ title: string; body?: string }> = []
+    class FakeNotification {
+      static permission = 'granted'
+      onclick: (() => void) | null = null
+      constructor(title: string, options?: NotificationOptions) { shown.push({ title, body: options?.body }) }
+      close() {}
+    }
+    vi.stubGlobal('Notification', FakeNotification)
+    responses = [() => recommendations('UPDATED', [first]), () => recommendations('UPDATED', [first, second])]
+    await startWith({ eventTypes: [], backgroundAlerts: true })
+
+    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+    act(() => { document.dispatchEvent(new Event('visibilitychange')) })
+    expect(navigator.geolocation.clearWatch).not.toHaveBeenCalled()
+    await move()
+    await advance(LIVE_REFRESH_THROTTLE_MS)
+
+    expect(shown).toEqual([{ title: '1 new place nearby', body: 'Art studio' }])
+  })
+
+  it('does not notify places while the tab is visible; the page shows them', async () => {
+    const shown: string[] = []
+    class FakeNotification {
+      static permission = 'granted'
+      onclick: (() => void) | null = null
+      constructor(title: string) { shown.push(title) }
+      close() {}
+    }
+    vi.stubGlobal('Notification', FakeNotification)
+    responses = [() => recommendations('UPDATED', [first]), () => recommendations('UPDATED', [second])]
+    const { result } = await startWith({ eventTypes: [], backgroundAlerts: true })
+
+    await move()
+    await advance(LIVE_REFRESH_THROTTLE_MS)
+
+    expect(shown).toEqual([])
+    expect(result.current.state.liveSuggestion).toEqual(second)
   })
 })
