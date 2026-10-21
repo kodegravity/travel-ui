@@ -341,7 +341,10 @@ textarea {
   .tm-brand__name {
     font-size: 18px;
   }
+}
 
+/* The full link row needs about 1010px; below 1024px the header uses the menu button and drawer instead. */
+@media (max-width: 1023.98px) {
   .tm-nav__links {
     display: none;
   }

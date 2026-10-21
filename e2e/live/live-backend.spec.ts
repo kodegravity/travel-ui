@@ -1,72 +1,61 @@
-import { expect, test, type Response as PlaywrightResponse } from '@playwright/test'
+import { expect, test, type Page } from '@playwright/test'
 
 /**
- * LIVE BACKEND INTEGRATION TESTS.
- * These run against the real Spring Boot API on http://localhost:8080 with its
- * mock attraction provider and AI disabled, confirmed by the operator.
- * Explicit opt-in prevents accidentally invoking paid providers on an unknown server.
+ * LIVE SMOKE TEST against the deployed site, API Gateway, and ECS services. Run with `npm run test:e2e:live`, then
+ * sign in with Okta in the browser window that opens. One sign-in covers every step, because Okta keeps tokens in
+ * session storage, which a new page would not have.
  */
-const BACKEND_URL = process.env.VITE_API_BASE_URL ?? 'http://localhost:8080'
-const ROME = { latitude: 41.8902, longitude: 12.4922 }
+const MADRID = { latitude: 40.4168, longitude: -3.7038 }
 
-async function backendReachable(): Promise<boolean> {
-  try {
-    await fetch(BACKEND_URL, { signal: AbortSignal.timeout(2000) })
-    return true
-  } catch {
-    return false
+async function signInByHand(page: Page) {
+  await page.goto('/travel-mode')
+  if (/\/login/.test(page.url()) || (await page.getByRole('button', { name: /sign in/i }).count()) > 0) {
+    console.log('Sign in with Okta in the browser window. Waiting up to 4 minutes...')
   }
+  await page.waitForURL('**/travel-mode', { timeout: 4 * 60 * 1000 })
+  await expect(page.getByRole('button', { name: 'Start Exploring' })).toBeVisible({ timeout: 30_000 })
 }
 
-test.beforeAll(async () => {
-  test.skip(process.env.RUN_LIVE_BACKEND_TESTS !== '1',
-    'Live integration requires RUN_LIVE_BACKEND_TESTS=1 after confirming mock provider and AI-disabled mode.')
-  test.skip(!(await backendReachable()), `Spring Boot backend is not reachable at ${BACKEND_URL}`)
-})
+test('live: sign in, sync the plan, and run a Travel Mode session end to end', async ({ page, context, baseURL }) => {
+  await context.grantPermissions(['geolocation'], { origin: new URL(baseURL!).origin })
+  await context.setGeolocation(MADRID)
 
-test.beforeEach(async ({ context }) => {
-  await context.grantPermissions(['geolocation'], { origin: 'http://localhost:5173' })
-  await context.setGeolocation(ROME)
-})
-
-test('live: start, receive recommendations, and stop terminates the backend session', async ({ page }) => {
-  await page.goto('/')
-  await page.getByRole('checkbox', { name: 'History' }).check()
-  await page.getByRole('checkbox', { name: 'Art' }).check()
-  await page.getByLabel('Maximum budget').fill('50')
-  await page.getByLabel('Currency').selectOption('EUR')
-  await page.getByRole('radio', { name: '180 min', exact: true }).check()
-  const createPromise = page.waitForResponse(
-    (response: PlaywrightResponse) =>
-      response.request().method() === 'POST' && response.url().endsWith('/api/v1/travel-sessions'),
+  const planLoaded = page.waitForResponse(
+    (response) => response.url().endsWith('/api/v1/travel-plan') && response.request().method() === 'GET',
+    { timeout: 5 * 60 * 1000 },
   )
-  const recommendationsPromise = page.waitForResponse(
-    (response) => response.request().method() === 'POST' && response.url().endsWith('/recommendations'),
-  )
-  await page.getByRole('button', { name: 'Start Exploring' }).click()
+  await signInByHand(page)
 
-  const createResponse = await createPromise
-  expect(createResponse.status()).toBe(201)
-  const { sessionId } = (await createResponse.json()) as { sessionId: string }
-
-  const recommendationsResponse = await recommendationsPromise
-  expect(recommendationsResponse.status()).toBe(200)
-  expect(recommendationsResponse.request().postDataJSON()).toEqual({ location: ROME })
-  const result = await recommendationsResponse.json()
-  expect(result.refreshStatus).toBe('UPDATED')
-  expect(result.recommendations.length).toBeGreaterThan(0)
-  for (const recommendation of result.recommendations) {
-    await expect(page.getByRole('heading', { name: recommendation.name, exact: true })).toBeVisible()
-  }
-  await expect(page.getByRole('button', { name: 'Stop Exploring' })).toBeEnabled()
-
-  await page.getByRole('button', { name: 'Stop Exploring' }).click()
-  await expect(page.getByRole('button', { name: 'Start Exploring' })).toBeEnabled()
-
-  const check = await fetch(`${BACKEND_URL}/api/v1/travel-sessions/${sessionId}/recommendations`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ location: ROME }),
+  await test.step('travel plan loads for the signed-in traveler', async () => {
+    const plan = await planLoaded
+    expect(plan.status()).toBe(200)
+    expect((await plan.json()).ownerRef).toMatch(/^[0-9a-f]{64}$/)
   })
-  expect([404, 409]).toContain(check.status)
+
+  await test.step('Travel Mode starts, recommends, and stops', async () => {
+    await page.getByRole('checkbox', { name: 'History' }).check()
+    await page.getByLabel('Maximum budget').fill('50')
+    const created = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().endsWith('/api/v1/travel-sessions'),
+    )
+    const recommended = page.waitForResponse(
+      (r) => r.request().method() === 'POST' && r.url().endsWith('/recommendations'),
+      { timeout: 60_000 },
+    )
+    await page.getByRole('button', { name: 'Start Exploring' }).click()
+
+    expect((await created).status()).toBe(201)
+    const response = await recommended
+    expect(response.status()).toBe(200)
+    const body = await response.json()
+    expect(['UPDATED', 'NO_NEW_RESULTS']).toContain(body.refreshStatus)
+    for (const place of body.recommendations.slice(0, 3)) {
+      await expect(page.getByRole('heading', { name: place.name, exact: true })).toBeVisible()
+    }
+
+    const stopped = page.waitForResponse((r) => r.request().method() === 'DELETE')
+    await page.getByRole('button', { name: 'Stop Exploring' }).click()
+    expect((await stopped).status()).toBe(204)
+    await expect(page.getByRole('button', { name: 'Start Exploring' })).toBeEnabled()
+  })
 })

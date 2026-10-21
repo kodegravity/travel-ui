@@ -1,4 +1,5 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
+import { E2E_ORIGIN, signIn, stubApiFallbacks } from '../support'
 
 /**
  * INTERCEPTED FRONTEND BEHAVIOR TESTS.
@@ -45,7 +46,9 @@ async function mockBackend(page: Page) {
 }
 
 test.beforeEach(async ({ context, page }) => {
-  await context.grantPermissions(['geolocation'], { origin: 'http://localhost:5173' })
+  await signIn(context)
+  await stubApiFallbacks(page)
+  await context.grantPermissions(['geolocation'], { origin: E2E_ORIGIN })
   await context.setGeolocation({ latitude: 41.8902, longitude: 12.4922 })
   await page.addInitScript(() => {
     const geo = navigator.geolocation
@@ -72,7 +75,7 @@ test.beforeEach(async ({ context, page }) => {
 })
 
 async function startExploring(page: Page) {
-  await page.goto('/')
+  await page.goto('/travel-mode')
   await page.getByRole('checkbox', { name: 'History' }).check()
   await page.getByLabel('Maximum budget').fill('50')
   await page.getByRole('button', { name: 'Start Exploring' }).click()
@@ -84,7 +87,7 @@ test('location permission denial shows a recoverable error', async ({ context, p
   page.on('request', (request) => {
     if (request.method() === 'POST' && request.url().endsWith('/api/v1/travel-sessions')) creations++
   })
-  await page.goto('/')
+  await page.goto('/travel-mode')
   await page.getByRole('checkbox', { name: 'History' }).check()
   await page.getByLabel('Maximum budget').fill('50')
   await page.route('**/api/v1/travel-sessions', (route: Route) => route.fulfill({ status: 500 }))
@@ -167,13 +170,13 @@ test('Check for new places is disabled while a check is in progress', async ({ p
 })
 
 test('explorer renders the hero and an inactive Travel Mode', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/travel-mode')
   await expect(page.getByRole('heading', { name: /Discover the moment/i })).toBeVisible()
   await expect(page.getByText('Not Exploring')).toBeVisible()
 })
 
 test('traveler starts exploring, sees a recommendation, and stops the session', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/travel-mode')
   await page.getByRole('checkbox', { name: 'History' }).check()
   await page.getByLabel('Maximum budget').fill('50')
   await page.getByRole('button', { name: 'Start Exploring' }).click()
@@ -190,7 +193,7 @@ test('traveler starts exploring, sees a recommendation, and stops the session', 
 })
 
 test('invalid budget blocks submission with an inline message', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/travel-mode')
   await page.getByRole('checkbox', { name: 'History' }).check()
   await page.getByLabel('Maximum budget').fill('-5')
   await page.getByRole('button', { name: 'Start Exploring' }).click()
@@ -199,10 +202,10 @@ test('invalid budget blocks submission with an inline message', async ({ page })
   await expect(page.getByText(/negative|greater than|at least|valid/i).first()).toBeVisible()
 })
 
-for (const width of [375, 768, 1440]) {
+for (const width of [375, 768, 900, 1024, 1440]) {
   test(`no horizontal overflow at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: 900 })
-    await page.goto('/')
+    await page.goto('/travel-mode')
     await expect(page.getByRole('heading', { name: /Discover the moment/i })).toBeVisible()
     const overflows = await page.evaluate(
       () => document.documentElement.scrollWidth > document.documentElement.clientWidth,
@@ -221,7 +224,7 @@ for (const width of [375, 768, 1440]) {
 }
 
 test('form controls have accessible names and the start button can receive keyboard focus', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/travel-mode')
   await expect(page.getByLabel('Maximum budget')).toBeVisible()
   await expect(page.getByRole('checkbox', { name: 'History' })).toBeVisible()
   const start = page.getByRole('button', { name: 'Start Exploring' })
@@ -230,7 +233,7 @@ test('form controls have accessible names and the start button can receive keybo
 })
 
 test('interest, currency and custom-time validation produce the exact session payload once', async ({ page }) => {
-  await page.goto('/')
+  await page.goto('/travel-mode')
   await page.getByRole('checkbox', { name: 'History' }).check()
   await page.getByRole('checkbox', { name: 'Art', exact: true }).check()
   await expect(page.getByRole('checkbox', { name: 'History' })).toBeChecked()
@@ -260,10 +263,10 @@ test('interest, currency and custom-time validation produce the exact session pa
   expect(creations).toBe(1)
 })
 
-test('Rome movement produces throttled in-app discoveries, deduplicates alerts, and respects live controls', async ({ page, context }) => {
+test('movement follows the backend refresh rule and surfaces new places in the alert', async ({ page, context }) => {
   await page.clock.install()
   const locations: unknown[] = []
-  const statuses = ['UPDATED', 'UNCHANGED', 'UPDATED', 'NO_NEW_RESULTS', 'UPDATED'] as const
+  const statuses = ['UPDATED', 'UPDATED', 'NO_NEW_RESULTS', 'UNCHANGED'] as const
   const newPlace = { ...PLACE, placeId: 'place-2', name: 'Roman Art Studio', category: 'ART' }
   await page.route(`**/api/v1/travel-sessions/${SESSION_ID}/recommendations`, (route) => {
     locations.push(route.request().postDataJSON())
@@ -272,66 +275,60 @@ test('Rome movement produces throttled in-app discoveries, deduplicates alerts, 
       json: {
         sessionId: SESSION_ID,
         refreshStatus: statuses[index] ?? 'UNCHANGED',
-        recommendations: index === 0 ? [PLACE] : index === 2 || index === 4 ? [newPlace] : [],
+        recommendations: index === 0 ? [PLACE] : index === 1 ? [newPlace] : [],
         generatedAt: new Date().toISOString(),
       },
     })
   })
+  const moveTo = async (coordinates: { latitude: number; longitude: number }) => {
+    await context.setGeolocation(coordinates)
+    await expect.poll(() => page.evaluate(() => Reflect.get(window, '__lastLocationFix'))).toEqual(coordinates)
+  }
   await startExploring(page)
   await expect(page.getByRole('heading', { name: PLACE.name })).toBeVisible()
   await expect.poll(() => page.evaluate(() => Reflect.get(window, '__activeLocationWatchers'))).toBe(1)
-  await context.setGeolocation({ latitude: 41.8903, longitude: 12.4923 })
-  await expect.poll(() => page.evaluate(() => Reflect.get(window, '__lastLocationFix'))).toEqual({
-    latitude: 41.8903, longitude: 12.4923,
-  })
-  await page.clock.fastForward(1000)
+
+  // About 15 m: GPS jitter and short walks are never sent, even across an automatic check.
+  await moveTo({ latitude: 41.8903, longitude: 12.4923 })
+  await page.clock.fastForward(6 * 60 * 1000)
   expect(locations).toHaveLength(1)
 
+  // About 1.4 km, past the cooldown: sent at once, and the new place shows in the alert.
   const moved = { latitude: 41.9002, longitude: 12.5022 }
-  await context.setGeolocation(moved)
-  await expect.poll(() => page.evaluate(() => Reflect.get(window, '__lastLocationFix'))).toEqual(moved)
-  await page.clock.fastForward(30_000)
-  await expect(page.getByText(/No new check was needed yet/)).toBeVisible()
+  await moveTo(moved)
+  await page.clock.fastForward(1000)
+  await expect.poll(() => locations.length).toBe(2)
+  expect(locations[1]).toMatchObject({ location: moved })
+  const alert = page.getByRole('status').filter({ hasText: 'New nearby suggestion' })
+  await expect(alert).toContainText(newPlace.name)
+  await expect(page.getByRole('heading', { name: newPlace.name })).toBeVisible()
   await expect(page.getByRole('heading', { name: PLACE.name })).toBeVisible()
-  await expect(page.getByText('New discovery nearby!')).toHaveCount(0)
-  expect(locations[1]).toEqual({ location: moved })
 
+  // Another long move right away waits for the backend's 5-minute cooldown, then sends the latest position.
   const next = { latitude: 41.9102, longitude: 12.5122 }
-  await context.setGeolocation(next)
-  await expect.poll(() => page.evaluate(() => Reflect.get(window, '__lastLocationFix'))).toEqual(next)
-  await page.clock.fastForward(30_000)
-  await expect(page.getByRole('heading', { name: newPlace.name })).toBeVisible()
-  await expect(page.getByRole('heading', { name: PLACE.name })).toBeVisible()
-  await expect(page.getByText('New discovery nearby!')).toBeVisible()
-  await expect(page.getByRole('link', { name: 'Open in Google Maps' })).toHaveAttribute('href', PLACE.mapsUrl)
-  await page.getByRole('button', { name: 'View Recommendation', exact: true }).click()
-  await expect(page.getByRole('article').filter({ has: page.getByRole('heading', { name: newPlace.name }) })).toBeFocused()
-  await page.getByRole('button', { name: 'Dismiss', exact: true }).click()
-  await expect(page.getByText('New discovery nearby!')).toHaveCount(0)
-  await page.getByRole('button', { name: 'Check for new places' }).click()
+  await moveTo(next)
+  await page.clock.fastForward(4 * 60 * 1000)
+  expect(locations).toHaveLength(2)
+  await page.clock.fastForward(60 * 1000)
+  await expect.poll(() => locations.length).toBe(3)
+  expect(locations[2]).toMatchObject({ location: next })
   await expect(page.getByText(/No new places were found nearby/)).toBeVisible()
-  await expect(page.getByRole('heading', { name: newPlace.name })).toBeVisible()
-  expect(locations).toHaveLength(4)
-  await expect(page.getByText('New discovery nearby!')).toHaveCount(0)
+
+  await page.getByRole('button', { name: 'Dismiss suggestion' }).click()
+  await expect(alert).toHaveCount(0)
+
+  // A manual check always goes out.
   await page.getByRole('button', { name: 'Check for new places' }).click()
-  await expect.poll(() => locations.length).toBe(5)
-  await expect(page.getByRole('button', { name: 'Check for new places' })).toBeEnabled()
-  await expect(page.getByText('New discovery nearby!')).toHaveCount(0)
-  await page.getByRole('switch', { name: 'Live Suggestions' }).uncheck()
-  await expect.poll(() => page.evaluate(() => Reflect.get(window, '__activeLocationWatchers'))).toBe(0)
-  await page.clock.fastForward(5 * 60 * 1000)
-  expect(locations).toHaveLength(5)
-  await expect(page.getByRole('heading', { name: newPlace.name })).toBeVisible()
-  await page.getByRole('switch', { name: 'Live Suggestions' }).check()
-  await expect.poll(() => page.evaluate(() => Reflect.get(window, '__activeLocationWatchers'))).toBe(1)
+  await expect.poll(() => locations.length).toBe(4)
 
   await page.getByRole('button', { name: 'Stop Exploring' }).click()
+  await expect(page.getByRole('button', { name: 'Start Exploring' })).toBeEnabled()
   await expect.poll(() => page.evaluate(() => Reflect.get(window, '__activeLocationWatchers'))).toBe(0)
-  await page.clock.fastForward(10 * 60 * 1000)
-  expect(locations).toHaveLength(5)
+  await page.clock.fastForward(20 * 60 * 1000)
+  expect(locations).toHaveLength(4)
 })
 
-test('foreground watcher pauses while hidden and resumes without overlapping automatic refreshes', async ({ page }) => {
+test('watching pauses while hidden and a return somewhere new checks once, without overlapping', async ({ page, context }) => {
   await page.clock.install()
   await startExploring(page)
   await expect(page.getByRole('heading', { name: PLACE.name })).toBeVisible()
@@ -344,17 +341,18 @@ test('foreground watcher pauses while hidden and resumes without overlapping aut
       json: { sessionId: SESSION_ID, refreshStatus: 'UNCHANGED', recommendations: [], generatedAt: new Date().toISOString() },
     })
   })
-  await page.evaluate(() => {
-    Object.defineProperty(document, 'hidden', { configurable: true, value: true })
+  const setHidden = (hidden: boolean) => page.evaluate((value) => {
+    Object.defineProperty(document, 'hidden', { configurable: true, value })
     document.dispatchEvent(new Event('visibilitychange'))
-  })
+  }, hidden)
+
+  await setHidden(true)
   await expect.poll(() => page.evaluate(() => Reflect.get(window, '__activeLocationWatchers'))).toBe(0)
   await page.clock.fastForward(5 * 60 * 1000)
   expect(refreshes).toBe(0)
-  await page.evaluate(() => {
-    Object.defineProperty(document, 'hidden', { configurable: true, value: false })
-    document.dispatchEvent(new Event('visibilitychange'))
-  })
+
+  await context.setGeolocation({ latitude: 41.9002, longitude: 12.5022 })
+  await setHidden(false)
   await expect.poll(() => refreshes).toBe(1)
   await expect.poll(() => page.evaluate(() => Reflect.get(window, '__activeLocationWatchers'))).toBe(1)
   await page.clock.fastForward(10 * 60 * 1000)
