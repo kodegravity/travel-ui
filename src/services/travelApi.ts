@@ -27,6 +27,7 @@ const RECOMMENDATIONS_PATH = '/api/v1/recommendations'
 const PLACES_PATH = '/api/v1/places'
 const ROUTES_PATH = '/api/v1/routes/optimize'
 const CHAT_PATH = '/api/v1/chat'
+const TRAVEL_PLAN_PATH = '/api/v1/travel-plan'
 
 export interface TravelApiRequestOptions {
   signal?: AbortSignal
@@ -191,7 +192,7 @@ async function readProblem(response: Response): Promise<TravelApiError> {
 }
 
 async function send(
-  method: 'GET' | 'POST' | 'DELETE',
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE',
   path: string,
   body: unknown,
   signal?: AbortSignal,
@@ -421,6 +422,52 @@ export async function askRoam(request: ChatRequest, options: TravelApiRequestOpt
   const response = await send('POST', CHAT_PATH, request, options.signal)
   const body = await readJson(response)
   if (!isChatReply(body)) throw invalidResponse(response.status)
+  return body
+}
+
+/** One synced part of the traveler's plan; null data records a deletion. */
+export interface TravelPlanEntry {
+  updatedAt: string
+  data: unknown
+}
+
+export interface TravelPlan {
+  /** One-way hash of the signed-in traveler, to notice a different account on this browser. */
+  ownerRef: string
+  /** 0 when nothing is stored yet. */
+  version: number
+  entries: Record<string, TravelPlanEntry>
+}
+
+function isTravelPlan(value: unknown): value is TravelPlan {
+  if (typeof value !== 'object' || value === null) return false
+  const v = value as Partial<TravelPlan>
+  return (
+    typeof v.ownerRef === 'string' &&
+    typeof v.version === 'number' &&
+    typeof v.entries === 'object' &&
+    v.entries !== null &&
+    Object.values(v.entries).every((entry) => typeof (entry as TravelPlanEntry)?.updatedAt === 'string')
+  )
+}
+
+/** GET /api/v1/travel-plan: the signed-in traveler's synced trips and itineraries. */
+export async function getTravelPlan(options: TravelApiRequestOptions = {}): Promise<TravelPlan> {
+  const response = await send('GET', TRAVEL_PLAN_PATH, undefined, options.signal)
+  const body = await readJson(response)
+  if (!isTravelPlan(body)) throw invalidResponse(response.status)
+  return body
+}
+
+/** PUT /api/v1/travel-plan: replaces the plan if it is still at baseVersion; 409 when another device saved first. */
+export async function saveTravelPlan(
+  baseVersion: number,
+  entries: Record<string, TravelPlanEntry>,
+  options: TravelApiRequestOptions = {},
+): Promise<TravelPlan> {
+  const response = await send('PUT', TRAVEL_PLAN_PATH, { baseVersion, entries }, options.signal)
+  const body = await readJson(response)
+  if (!isTravelPlan(body)) throw invalidResponse(response.status)
   return body
 }
 

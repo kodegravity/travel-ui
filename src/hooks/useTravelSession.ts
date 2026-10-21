@@ -51,6 +51,14 @@ const BUSY_PHASES: readonly TravelSessionPhase[] = [
 export const AUTO_REFRESH_INTERVAL_MS = 5 * 60 * 1000
 export const LIVE_REFRESH_THROTTLE_MS = 30_000
 const GPS_JITTER_METERS = 25
+/**
+ * The backend only searches again after the traveler moves this far from its last real check AND
+ * AUTO_REFRESH_INTERVAL_MS has passed (travel-session `minimum-movement-meters`, `minimum-refresh-interval-minutes`).
+ * Any earlier call is answered UNCHANGED, so it is not sent.
+ */
+export const BACKEND_MIN_MOVEMENT_METERS = 250
+/** Half the backend's 30-minute inactivity timeout: a traveler standing still still keeps the session alive. */
+export const KEEP_ALIVE_INTERVAL_MS = 15 * 60 * 1000
 /** A watched position older than this is not reused for an automatic refresh. */
 const WATCHED_LOCATION_MAX_AGE_MS = 10 * 60 * 1000
 
@@ -269,6 +277,8 @@ export function useTravelSession(
   const autoRefreshRef = useRef<() => Promise<void>>(async () => undefined)
   const lastAttemptAtRef = useRef<number | null>(null)
   const lastSubmittedLocationRef = useRef<BrowserCoordinates | null>(null)
+  /** Where and when the backend last really evaluated (anything but UNCHANGED): its refresh gate baseline. */
+  const evaluatedRef = useRef<{ location: BrowserCoordinates; at: number } | null>(null)
   const liveEnabledRef = useRef(true)
   const automaticPausedRef = useRef(false)
   const monitoringStoppedRef = useRef(false)
@@ -310,10 +320,17 @@ export function useTravelSession(
     let movementTimer: number | undefined
     const considerMovement = () => {
       const fix = watchedFixRef.current
-      const previous = lastSubmittedLocationRef.current
-      if (!fix || !previous || distanceBetweenLocations(previous, fix.coordinates) < GPS_JITTER_METERS) return
+      const evaluated = evaluatedRef.current
+      const previous = evaluated?.location ?? lastSubmittedLocationRef.current
+      const minimumMeters = evaluated ? BACKEND_MIN_MOVEMENT_METERS : GPS_JITTER_METERS
+      if (!fix || !previous || distanceBetweenLocations(previous, fix.coordinates) < minimumMeters) return
       if (movementTimer !== undefined) return
-      const delay = Math.max(0, refreshThrottleMs - (Date.now() - (lastAttemptAtRef.current ?? 0)))
+      const now = Date.now()
+      const delay = Math.max(
+        0,
+        refreshThrottleMs - (now - (lastAttemptAtRef.current ?? 0)),
+        evaluated ? AUTO_REFRESH_INTERVAL_MS - (now - evaluated.at) : 0,
+      )
       movementTimer = window.setTimeout(() => {
         movementTimer = undefined
         void autoRefreshRef.current()
@@ -396,6 +413,7 @@ export function useTravelSession(
     abortAutoRefresh()
     sessionIdRef.current = null
     lastSubmittedLocationRef.current = null
+    evaluatedRef.current = null
     watchedFixRef.current = null
     dispatch({ type: 'RESET', notice })
   }
@@ -452,6 +470,7 @@ export function useTravelSession(
     throwIfAborted(signal)
     if (sessionIdRef.current !== sessionId) return
     lastSuccessAtRef.current = Date.now()
+    if (response.refreshStatus !== 'UNCHANGED') evaluatedRef.current = { location, at: Date.now() }
     const fresh = (response.liveSuggestions ?? []).filter((item) => !seenEventIdsRef.current.has(item.event.id))
     fresh.forEach((item) => seenEventIdsRef.current.add(item.event.id))
     const newPlaces = !initial && response.refreshStatus === 'UPDATED' && liveEnabledRef.current
@@ -480,6 +499,7 @@ export function useTravelSession(
       }
       sessionIdRef.current = session.sessionId
       seenEventIdsRef.current = new Set()
+      evaluatedRef.current = null
       automaticPausedRef.current = false
       monitoringStoppedRef.current = false
       lastSuccessAtRef.current = null
@@ -513,6 +533,18 @@ export function useTravelSession(
     }
   }
 
+  /** True when the backend would answer UNCHANGED: too close to, or too soon after, its last real check. */
+  function backendWouldSkip(location: BrowserCoordinates): boolean {
+    const evaluated = evaluatedRef.current
+    if (!evaluated) return false
+    return distanceBetweenLocations(evaluated.location, location) < BACKEND_MIN_MOVEMENT_METERS ||
+      Date.now() - evaluated.at < AUTO_REFRESH_INTERVAL_MS
+  }
+
+  function keepAliveDue(): boolean {
+    return lastAttemptAtRef.current === null || Date.now() - lastAttemptAtRef.current >= KEEP_ALIVE_INTERVAL_MS
+  }
+
   /** Background refresh on the interval. It never changes the busy phase, so the UI stays calm. */
   async function runAutoRefresh() {
     const sessionId = sessionIdRef.current
@@ -528,6 +560,7 @@ export function useTravelSession(
     dispatch({ type: 'CHECKING', checking: true })
     try {
       const location = await locationForAutoRefresh(controller.signal)
+      if (backendWouldSkip(location) && !keepAliveDue()) return
       await fetchRecommendations(sessionId, location, controller.signal)
     } catch (error) {
       if (!controller.signal.aborted) {

@@ -206,7 +206,7 @@ export function toPlainText(itinerary: Itinerary, cityName: string, clock: (m: n
 
 // --- Store ------------------------------------------------------------------------------------------------------
 
-type ItineraryState = Record<string, Itinerary>
+export type ItineraryState = Record<string, Itinerary>
 
 function isItinerary(value: unknown): value is Itinerary {
   if (typeof value !== 'object' || value === null) return false
@@ -262,6 +262,24 @@ export function useItineraries(): ItineraryState {
     () => state,
     () => ({}),
   )
+}
+
+/** The current itineraries, for sync. */
+export function getItineraries(): ItineraryState {
+  return state
+}
+
+export function subscribeItineraries(listener: () => void): () => void {
+  listeners.add(listener)
+  return () => listeners.delete(listener)
+}
+
+/** Replaces a city's itinerary with a synced copy; null or a malformed one removes it. */
+export function replaceItinerary(cityId: string, itinerary: unknown) {
+  const next = { ...state }
+  if (isItinerary(itinerary) && itinerary.cityId === cityId) next[cityId] = itinerary
+  else delete next[cityId]
+  commit(next)
 }
 
 /** Test helper. */

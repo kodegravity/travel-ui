@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider } from './auth/AuthProvider'
 import { ProtectedRoute } from './auth/ProtectedRoute'
+import { PlanSync } from './components/layout/PlanSync'
 import { AuthCallbackPage } from './pages/AuthCallbackPage'
 import { LoginPage } from './pages/LoginPage'
 import { ExplorePage } from './pages/ExplorePage'
@@ -16,6 +17,7 @@ import { TravelExplorerPage } from './pages/TravelExplorerPage'
 export default function App() {
   return (
     <AuthProvider>
+      <PlanSync />
       <BrowserRouter>
         <Routes>
           <Route path="/login" element={<LoginPage />} />

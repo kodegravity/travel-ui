@@ -1,6 +1,11 @@
 import { act, renderHook } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { AUTO_REFRESH_INTERVAL_MS, LIVE_REFRESH_THROTTLE_MS, useTravelSession } from './useTravelSession'
+import {
+  AUTO_REFRESH_INTERVAL_MS,
+  KEEP_ALIVE_INTERVAL_MS,
+  LIVE_REFRESH_THROTTLE_MS,
+  useTravelSession,
+} from './useTravelSession'
 import type { RecommendationDto, RefreshStatus } from '../types/api'
 
 const preferences = {
@@ -11,6 +16,8 @@ const preferences = {
 }
 const rome = { latitude: 41.8902, longitude: 12.4922 }
 const moved = { latitude: 41.9002, longitude: 12.5022 }
+/** About 100 m north of `rome`: past GPS jitter, short of the backend's 250 m. */
+const nearby = { latitude: 41.8911, longitude: 12.4922 }
 const first: RecommendationDto = {
   placeId: 'first', name: 'Colosseum', category: 'HISTORY', description: 'Ancient amphitheatre.',
   ...rome,
@@ -109,12 +116,12 @@ describe('proactive foreground exploration', () => {
     expect(navigator.geolocation.watchPosition).toHaveBeenCalledTimes(1)
   })
 
-  it('coalesces movement, sends the latest fix after 30 seconds, and highlights genuinely new IDs', async () => {
+  it('coalesces movement until the backend cooldown ends, sends the latest fix, and highlights new IDs', async () => {
     const { result } = await start()
     responses.push(() => recommendations('UPDATED', [second]))
     await move()
     await move({ latitude: 41.9102, longitude: 12.5122 })
-    await advance(LIVE_REFRESH_THROTTLE_MS - 1)
+    await advance(AUTO_REFRESH_INTERVAL_MS - 1)
     expect(refreshCalls()).toHaveLength(1)
     await advance(1)
     expect(refreshCalls()).toHaveLength(2)
@@ -129,12 +136,42 @@ describe('proactive foreground exploration', () => {
     const { result } = await start()
     responses.push(() => recommendations('UPDATED', [second]), () => recommendations('UPDATED', [third]))
     await move()
-    await advance(LIVE_REFRESH_THROTTLE_MS)
+    await advance(AUTO_REFRESH_INTERVAL_MS)
     expect(result.current.state.liveSuggestion).toEqual(second)
 
     await move(rome)
-    await advance(LIVE_REFRESH_THROTTLE_MS)
+    await advance(AUTO_REFRESH_INTERVAL_MS)
     expect(result.current.state.liveSuggestion).toEqual(third)
+  })
+
+  it('does not send moves the backend would answer UNCHANGED', async () => {
+    await start()
+    await move(nearby)
+    await advance(AUTO_REFRESH_INTERVAL_MS * 2)
+    expect(refreshCalls()).toHaveLength(1)
+
+    await move()
+    await advance(0)
+    expect(refreshCalls()).toHaveLength(2)
+  })
+
+  it('checks in every 15 minutes while standing still, so the session stays alive', async () => {
+    await start()
+    await advance(KEEP_ALIVE_INTERVAL_MS - 1)
+    expect(refreshCalls()).toHaveLength(1)
+    await advance(AUTO_REFRESH_INTERVAL_MS)
+    expect(refreshCalls()).toHaveLength(2)
+  })
+
+  it('sends an unchanged answer without moving the cooldown baseline', async () => {
+    await start()
+    responses.push(() => recommendations('UNCHANGED'), () => recommendations('UPDATED', [second]))
+    await advance(KEEP_ALIVE_INTERVAL_MS)
+    expect(refreshCalls()).toHaveLength(2)
+    // The baseline is still the first check, long past its cooldown, so a real move goes out at once.
+    await move()
+    await advance(LIVE_REFRESH_THROTTLE_MS)
+    expect(refreshCalls()).toHaveLength(3)
   })
 
   it('ignores GPS jitter and rejects inaccurate fixes without sending them', async () => {
@@ -147,7 +184,7 @@ describe('proactive foreground exploration', () => {
     expect(refreshCalls()).toHaveLength(1)
     await move()
     expect(result.current.state.locationNotice).toBeNull()
-    await advance(0)
+    await advance(AUTO_REFRESH_INTERVAL_MS - LIVE_REFRESH_THROTTLE_MS)
     expect(refreshCalls()).toHaveLength(2)
   })
 
@@ -201,6 +238,8 @@ describe('proactive foreground exploration', () => {
     expect(navigator.geolocation.clearWatch).toHaveBeenCalledWith(42)
     await advance(AUTO_REFRESH_INTERVAL_MS)
     expect(refreshCalls()).toHaveLength(1)
+    // Back in the tab somewhere else, so the backend would search again.
+    vi.mocked(navigator.geolocation.getCurrentPosition).mockImplementationOnce((success) => success(position(moved)))
     act(() => {
       Object.defineProperty(document, 'hidden', { configurable: true, value: false })
       document.dispatchEvent(new Event('visibilitychange'))
@@ -216,7 +255,7 @@ describe('proactive foreground exploration', () => {
     let finish: (response: Response) => void = () => undefined
     responses.push(() => new Promise((resolve) => { finish = resolve }))
     await move()
-    await advance(LIVE_REFRESH_THROTTLE_MS)
+    await advance(AUTO_REFRESH_INTERVAL_MS)
     expect(result.current.state.isCheckingForUpdates).toBe(true)
     await advance(AUTO_REFRESH_INTERVAL_MS * 2)
     expect(refreshCalls()).toHaveLength(2)
@@ -231,7 +270,7 @@ describe('proactive foreground exploration', () => {
     const { result } = await start()
     responses.push(() => json(503, { title: 'Provider unavailable', status: 503 }))
     await move()
-    await advance(LIVE_REFRESH_THROTTLE_MS)
+    await advance(AUTO_REFRESH_INTERVAL_MS)
     expect(result.current.state.errorMessage).toMatch(/temporarily unavailable/)
     expect(result.current.state.recommendations).toEqual([first])
     await advance(AUTO_REFRESH_INTERVAL_MS * 3)
@@ -273,7 +312,7 @@ describe('proactive foreground exploration', () => {
     const { result } = await start()
     responses.push(() => json(410, { title: 'Travel session expired', status: 410 }))
     await move()
-    await advance(LIVE_REFRESH_THROTTLE_MS)
+    await advance(AUTO_REFRESH_INTERVAL_MS)
     expect(result.current.state.sessionId).toBeNull()
     expect(result.current.state.notice).toMatch(/expired/)
     expect(result.current.state.liveSuggestion).toBeNull()
@@ -330,7 +369,7 @@ describe('live event alerts', () => {
     expect(body(refreshCalls()[0]!)).toMatchObject({ eventTypes: ['SPORTS', 'MUSIC'], seenEventIds: [] })
 
     await move()
-    await advance(LIVE_REFRESH_THROTTLE_MS)
+    await advance(AUTO_REFRESH_INTERVAL_MS)
 
     expect(body(refreshCalls()[1]!).seenEventIds).toEqual(['G1'])
     expect(result.current.state.liveEvents.map((item) => item.event.id)).toEqual(['C1', 'G1'])
@@ -375,7 +414,7 @@ describe('live event alerts', () => {
 
     Object.defineProperty(document, 'hidden', { configurable: true, value: true })
     await move()
-    await advance(LIVE_REFRESH_THROTTLE_MS)
+    await advance(AUTO_REFRESH_INTERVAL_MS)
 
     expect(shown).toEqual(['Derby night nearby'])
   })
@@ -396,7 +435,7 @@ describe('live event alerts', () => {
     act(() => { document.dispatchEvent(new Event('visibilitychange')) })
     expect(navigator.geolocation.clearWatch).not.toHaveBeenCalled()
     await move()
-    await advance(LIVE_REFRESH_THROTTLE_MS)
+    await advance(AUTO_REFRESH_INTERVAL_MS)
 
     expect(shown).toEqual([{ title: '1 new place nearby', body: 'Art studio' }])
   })
@@ -414,7 +453,7 @@ describe('live event alerts', () => {
     const { result } = await startWith({ eventTypes: [], backgroundAlerts: true })
 
     await move()
-    await advance(LIVE_REFRESH_THROTTLE_MS)
+    await advance(AUTO_REFRESH_INTERVAL_MS)
 
     expect(shown).toEqual([])
     expect(result.current.state.liveSuggestion).toEqual(second)

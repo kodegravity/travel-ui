@@ -67,18 +67,40 @@ function recommendationCalls(fetchMock: ReturnType<typeof mockBackend>) {
   })
 }
 
+const START = { latitude: 41.9028, longitude: 12.4964 }
+/** About 1.1 km from START: far enough for the backend to search again. */
+const WALKED = { latitude: 41.9128, longitude: 12.4964 }
+let watchCallback: PositionCallback | null = null
+
+function positionAt(coordinates: { latitude: number; longitude: number }): GeolocationPosition {
+  return {
+    coords: { ...coordinates, accuracy: 10 } as GeolocationCoordinates,
+    timestamp: Date.now(),
+  } as GeolocationPosition
+}
+
+/** The first fix is START; any later one-off fix is WALKED, as if the traveler moved on. */
 function mockGeolocation() {
+  let calls = 0
   const getCurrentPosition = vi.fn((success: PositionCallback) => {
-    success({
-      coords: { latitude: 41.9028, longitude: 12.4964, accuracy: 10 } as GeolocationCoordinates,
-      timestamp: Date.now(),
-    } as GeolocationPosition)
+    success(positionAt(calls++ === 0 ? START : WALKED))
+  })
+  const watchPosition = vi.fn((success: PositionCallback) => {
+    watchCallback = success
+    return 1
   })
   Object.defineProperty(navigator, 'geolocation', {
     configurable: true,
-    value: { getCurrentPosition, watchPosition: vi.fn(() => 1), clearWatch: vi.fn() },
+    value: { getCurrentPosition, watchPosition, clearWatch: vi.fn() },
   })
   return getCurrentPosition
+}
+
+/** Reports a watched position about 1 km away, so the next automatic check is worth sending. */
+async function walk() {
+  await act(async () => {
+    watchCallback?.(positionAt(WALKED))
+  })
 }
 
 function setDocumentHidden(hidden: boolean) {
@@ -106,6 +128,7 @@ beforeEach(() => {
 })
 
 afterEach(() => {
+  watchCallback = null
   vi.useRealTimers()
   vi.unstubAllGlobals()
   vi.restoreAllMocks()
@@ -123,6 +146,7 @@ describe('Travel session monitoring', () => {
     ])
     render(<TravelExplorerPage />)
     await startSession(user)
+    await walk()
     expect(recommendationCalls(fetchMock)).toHaveLength(1)
 
     await advance(AUTO_REFRESH_INTERVAL_MS)
@@ -142,6 +166,7 @@ describe('Travel session monitoring', () => {
     ])
     render(<TravelExplorerPage />)
     await startSession(user)
+    await walk()
     expect(screen.queryByText('New nearby suggestion')).not.toBeInTheDocument()
 
     await advance(AUTO_REFRESH_INTERVAL_MS)
@@ -177,6 +202,7 @@ describe('Travel session monitoring', () => {
     ])
     render(<TravelExplorerPage />)
     await startSession(user)
+    await walk()
 
     await advance(AUTO_REFRESH_INTERVAL_MS)
 
@@ -192,6 +218,7 @@ describe('Travel session monitoring', () => {
     const fetchMock = mockBackend([() => recommendationsResponse('UPDATED', [placeA])], soon)
     render(<TravelExplorerPage />)
     await startSession(user)
+    await walk()
 
     await advance(AUTO_REFRESH_INTERVAL_MS)
 
@@ -209,6 +236,7 @@ describe('Travel session monitoring', () => {
     ])
     render(<TravelExplorerPage />)
     await startSession(user)
+    await walk()
 
     await advance(AUTO_REFRESH_INTERVAL_MS)
 
@@ -299,6 +327,7 @@ describe('Travel session monitoring', () => {
     ])
     render(<TravelExplorerPage />)
     await startSession(user)
+    await walk()
     await advance(AUTO_REFRESH_INTERVAL_MS)
     await user.click(screen.getByRole('button', { name: 'Stop Exploring' }))
     await advance(0)

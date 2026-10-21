@@ -24,7 +24,7 @@ export interface TripSettings {
 
 export const DEFAULT_TRIP_SETTINGS: TripSettings = { mode: 'walk', start: 'center' }
 
-interface TripState {
+export interface TripState {
   /** One trip per city, in the traveler's chosen visiting order. */
   trips: Record<string, SavedPlace[]>
   favorites: SavedPlace[]
@@ -163,6 +163,34 @@ export function formatMinutes(minutes: number): string {
   const rest = minutes % 60
   if (hours === 0) return `${rest} min`
   return rest ? `${hours}h ${rest}m` : `${hours}h`
+}
+
+// --- Sync ---------------------------------------------------------------------------------------------------------
+
+/** The current state, for sync. */
+export function getTripState(): TripState {
+  return state
+}
+
+export function subscribeTripStore(listener: () => void): () => void {
+  return subscribe(listener)
+}
+
+/** Replaces a city's trip and settings with a synced copy. Malformed places and settings are dropped. */
+export function replaceCityTrip(cityId: string, places: unknown, settings: unknown) {
+  const trips = { ...state.trips }
+  const valid = Array.isArray(places) ? places.filter(isSavedPlace) : []
+  if (valid.length > 0) trips[cityId] = valid
+  else delete trips[cityId]
+  const nextSettings = { ...state.settings }
+  if (isTripSettings(settings)) nextSettings[cityId] = settings
+  else delete nextSettings[cityId]
+  commit({ ...state, trips, settings: nextSettings })
+}
+
+/** Replaces the favorites with a synced copy. */
+export function replaceFavorites(places: unknown) {
+  commit({ ...state, favorites: Array.isArray(places) ? places.filter(isSavedPlace) : [] })
 }
 
 /** Test helper: forget everything, in memory and in storage. */
