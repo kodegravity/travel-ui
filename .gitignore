@@ -31,3 +31,6 @@ dist-ssr
 # Playwright output
 test-results/
 playwright-report/
+
+# Vitest coverage (vitest run --coverage)
+coverage/
